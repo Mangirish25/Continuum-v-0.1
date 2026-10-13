@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     
     # AI / LLM / Embeddings
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "qwen2.5:7b"  # Ollama Qwen model variant (e.g. qwen2.5:7b or qwen:8b)
+    OLLAMA_MODEL: str = "qwen3:8b"  # Ollama Qwen model variant (e.g. qwen3:8b or qwen2.5:7b)
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
     
     # Vector Storage
