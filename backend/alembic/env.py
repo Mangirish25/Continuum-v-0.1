@@ -16,7 +16,10 @@ from app.db.models.all_models import Base
 config = context.config
 
 if config.config_file_name:
-    fileConfig(config.config_file_name)
+    try:
+        fileConfig(config.config_file_name)
+    except Exception:
+        pass
 
 target_metadata = Base.metadata
 
