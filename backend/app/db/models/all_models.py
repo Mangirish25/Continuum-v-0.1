@@ -11,7 +11,7 @@ def generate_uuid() -> str:
     return str(uuid.uuid4())
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 # Association table for employee-project M2M
 employee_projects = Table(

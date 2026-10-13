@@ -23,8 +23,16 @@ if config.config_file_name:
 
 target_metadata = Base.metadata
 
-def run_migrations_offline() -> None:
+def _get_migration_url() -> str:
     url = settings.SYNC_DATABASE_URL or settings.DATABASE_URL
+    if "+asyncpg" in url:
+        url = url.replace("+asyncpg", "+psycopg2")
+    if "+psycopg2" in url and "ssl=" in url and "sslmode=" not in url:
+        url = url.replace("ssl=", "sslmode=")
+    return url
+
+def run_migrations_offline() -> None:
+    url = _get_migration_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -37,7 +45,7 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section) or {}
-    configuration["sqlalchemy.url"] = settings.SYNC_DATABASE_URL or settings.DATABASE_URL
+    configuration["sqlalchemy.url"] = _get_migration_url()
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
