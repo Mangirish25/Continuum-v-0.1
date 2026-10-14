@@ -57,7 +57,7 @@ class RiskService:
                 bus_factor=0,
                 risk_level="CRITICAL",
                 risk_reasons=["Project has 0 assigned team members", "No knowledge continuity owner identified"],
-                calculated_at=datetime.now(timezone.utc)
+                calculated_at=datetime.now(timezone.utc).replace(tzinfo=None)
             )
             db.add(score_obj)
             await db.commit()
@@ -141,7 +141,7 @@ class RiskService:
             bus_factor=bus_factor,
             risk_level=risk_level,
             risk_reasons=reasons if reasons else ["Knowledge is evenly distributed across team members"],
-            calculated_at=datetime.now(timezone.utc)
+            calculated_at=datetime.now(timezone.utc).replace(tzinfo=None)
         )
 
         db.add(risk_obj)

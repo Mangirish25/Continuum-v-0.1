@@ -164,7 +164,7 @@ class HandoverService:
 
         h.status = "SENT"
         h.recipient_email = target_recipient
-        h.sent_at = datetime.now(timezone.utc)
+        h.sent_at = datetime.now(timezone.utc).replace(tzinfo=None)
         await db.commit()
 
         logger.info(f"Handover {h.id} status updated to SENT")
