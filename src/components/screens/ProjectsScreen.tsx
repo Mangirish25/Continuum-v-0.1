@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Project, Employee } from '../../types';
 import {
   FolderGit2,
@@ -23,6 +23,7 @@ interface ProjectsScreenProps {
   onSelectProject: (proj: Project | null) => void;
   onSelectEmployeeById: (employeeId: string) => void;
   onOpenCreateHandover: () => void;
+  onOpenAddProject?: () => void;
 }
 
 export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({
@@ -31,10 +32,17 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({
   onSelectProject,
   onSelectEmployeeById,
   onOpenCreateHandover,
+  onOpenAddProject,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [teamFilter, setTeamFilter] = useState('all');
   const [riskFilter, setRiskFilter] = useState('all');
+
+  // Extract unique teams from actual project data
+  const uniqueTeams = useMemo(() => {
+    const teams = new Set(projects.map((p) => p.team).filter(Boolean));
+    return Array.from(teams).sort();
+  }, [projects]);
 
   // If a project is selected, render Project Detail view (Section 14)
   if (selectedProject) {
@@ -139,40 +147,46 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({
             </span>
           </div>
 
-          <div className="space-y-3">
-            {selectedProject.members.map((member) => (
-              <div
-                key={member.employeeId}
-                onClick={() => onSelectEmployeeById(member.employeeId)}
-                className="p-3 border border-slate-200 hover:border-indigo-300 rounded cursor-pointer transition-all hover:bg-slate-50/50 space-y-1.5"
-              >
-                <div className="flex items-center justify-between text-xs">
-                  <div>
-                    <span className="font-semibold text-slate-900 hover:text-indigo-600">
-                      {member.name}
+          {selectedProject.members && selectedProject.members.length > 0 ? (
+            <div className="space-y-3">
+              {selectedProject.members.map((member) => (
+                <div
+                  key={member.employeeId}
+                  onClick={() => onSelectEmployeeById(member.employeeId)}
+                  className="p-3 border border-slate-200 hover:border-indigo-300 rounded cursor-pointer transition-all hover:bg-slate-50/50 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-semibold text-slate-900 hover:text-indigo-600">
+                        {member.name}
+                      </span>
+                      <span className="text-slate-400 text-[11px] ml-2">({member.role})</span>
+                    </div>
+                    <span className="font-mono font-bold text-slate-900 tabular-nums">
+                      {member.contributionPercent}%
                     </span>
-                    <span className="text-slate-400 text-[11px] ml-2">({member.role})</span>
                   </div>
-                  <span className="font-mono font-bold text-slate-900 tabular-nums">
-                    {member.contributionPercent}%
-                  </span>
-                </div>
 
-                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full ${
-                      member.contributionPercent >= 60
-                        ? 'bg-rose-500'
-                        : member.contributionPercent >= 30
-                        ? 'bg-amber-500'
-                        : 'bg-emerald-500'
-                    }`}
-                    style={{ width: `${member.contributionPercent}%` }}
-                  />
+                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${
+                        member.contributionPercent >= 60
+                          ? 'bg-rose-500'
+                          : member.contributionPercent >= 30
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500'
+                      }`}
+                      style={{ width: `${member.contributionPercent}%` }}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-4 border border-dashed border-slate-200 rounded text-center text-xs text-slate-400">
+              No team members assigned to this project yet.
+            </div>
+          )}
         </div>
 
         {/* Risk Reasons & Knowledge Sources Grid */}
@@ -183,17 +197,23 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({
               <ShieldAlert className="w-4 h-4 text-rose-600" />
               <span>Continuity Risk Reasons</span>
             </h2>
-            <div className="space-y-2 text-xs">
-              {selectedProject.riskReasons.map((reason, idx) => (
-                <div
-                  key={idx}
-                  className="p-2.5 bg-rose-50/70 border border-rose-200 rounded text-rose-950 flex items-start gap-2"
-                >
-                  <span className="font-bold text-rose-600">&bull;</span>
-                  <span>{reason}</span>
-                </div>
-              ))}
-            </div>
+            {selectedProject.riskReasons && selectedProject.riskReasons.length > 0 ? (
+              <div className="space-y-2 text-xs">
+                {selectedProject.riskReasons.map((reason, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2.5 bg-rose-50/70 border border-rose-200 rounded text-rose-950 flex items-start gap-2"
+                  >
+                    <span className="font-bold text-rose-600">&bull;</span>
+                    <span>{reason}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded text-emerald-800 text-xs">
+                No active risk conditions identified for this project.
+              </div>
+            )}
           </div>
 
           {/* Connected Knowledge Sources */}
@@ -202,49 +222,67 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({
               Connected Knowledge Sources
             </h2>
             <div className="space-y-2 text-xs">
-              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FolderGit2 className="w-4 h-4 text-slate-700" />
-                  <span className="font-semibold text-slate-800">GitHub:</span>
-                  <span className="text-slate-600 font-mono text-[11px]">
-                    {selectedProject.connectedSources.github.join(', ')}
-                  </span>
+              {selectedProject.connectedSources?.github && selectedProject.connectedSources.github.length > 0 ? (
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FolderGit2 className="w-4 h-4 text-slate-700" />
+                    <span className="font-semibold text-slate-800">GitHub:</span>
+                    <span className="text-slate-600 font-mono text-[11px]">
+                      {selectedProject.connectedSources.github.join(', ')}
+                    </span>
+                  </div>
+                  <span className="text-emerald-700 font-mono text-[10px] font-semibold">🟢 Connected</span>
                 </div>
-                <span className="text-emerald-700 font-mono text-[10px] font-semibold">🟢 Connected</span>
-              </div>
+              ) : null}
 
-              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Folder className="w-4 h-4 text-amber-600" />
-                  <span className="font-semibold text-slate-800">Google Drive:</span>
-                  <span className="text-slate-600 font-mono text-[11px]">
-                    {selectedProject.connectedSources.googledrive.join(', ')}
-                  </span>
+              {selectedProject.connectedSources?.googledrive && selectedProject.connectedSources.googledrive.length > 0 ? (
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Folder className="w-4 h-4 text-amber-600" />
+                    <span className="font-semibold text-slate-800">Google Drive:</span>
+                    <span className="text-slate-600 font-mono text-[11px]">
+                      {selectedProject.connectedSources.googledrive.join(', ')}
+                    </span>
+                  </div>
+                  <span className="text-emerald-700 font-mono text-[10px] font-semibold">🟢 Connected</span>
                 </div>
-                <span className="text-emerald-700 font-mono text-[10px] font-semibold">🟢 Connected</span>
-              </div>
+              ) : null}
 
-              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-slate-700" />
-                  <span className="font-semibold text-slate-800">Notion:</span>
-                  <span className="text-slate-600 font-mono text-[11px]">
-                    {selectedProject.connectedSources.notion.join(', ')}
-                  </span>
+              {selectedProject.connectedSources?.notion && selectedProject.connectedSources.notion.length > 0 ? (
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-slate-700" />
+                    <span className="font-semibold text-slate-800">Notion:</span>
+                    <span className="text-slate-600 font-mono text-[11px]">
+                      {selectedProject.connectedSources.notion.join(', ')}
+                    </span>
+                  </div>
+                  <span className="text-emerald-700 font-mono text-[10px] font-semibold">🟢 Connected</span>
                 </div>
-                <span className="text-emerald-700 font-mono text-[10px] font-semibold">🟢 Connected</span>
-              </div>
+              ) : null}
 
-              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-blue-600" />
-                  <span className="font-semibold text-slate-800">Jira:</span>
-                  <span className="text-slate-600 font-mono text-[11px]">
-                    {selectedProject.connectedSources.jira}
-                  </span>
+              {selectedProject.connectedSources?.jira ? (
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-blue-600" />
+                    <span className="font-semibold text-slate-800">Jira:</span>
+                    <span className="text-slate-600 font-mono text-[11px]">
+                      {selectedProject.connectedSources.jira}
+                    </span>
+                  </div>
+                  <span className="text-emerald-700 font-mono text-[10px] font-semibold">🟢 Connected</span>
                 </div>
-                <span className="text-emerald-700 font-mono text-[10px] font-semibold">🟢 Connected</span>
-              </div>
+              ) : null}
+
+              {(!selectedProject.connectedSources ||
+                ((!selectedProject.connectedSources.github || selectedProject.connectedSources.github.length === 0) &&
+                  (!selectedProject.connectedSources.googledrive || selectedProject.connectedSources.googledrive.length === 0) &&
+                  (!selectedProject.connectedSources.notion || selectedProject.connectedSources.notion.length === 0) &&
+                  !selectedProject.connectedSources.jira)) && (
+                <div className="p-4 border border-dashed border-slate-200 rounded text-center text-xs text-slate-400">
+                  No knowledge sources connected to this project yet.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -255,17 +293,23 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({
             <Clock className="w-4 h-4 text-slate-400" />
             <span>Recent Synchronization Activity</span>
           </h2>
-          <div className="space-y-2 text-xs">
-            {selectedProject.recentActivity.map((act) => (
-              <div
-                key={act.id}
-                className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded"
-              >
-                <span className="text-slate-800">{act.action}</span>
-                <span className="text-[10px] font-mono text-slate-400">{act.timestamp}</span>
-              </div>
-            ))}
-          </div>
+          {selectedProject.recentActivity && selectedProject.recentActivity.length > 0 ? (
+            <div className="space-y-2 text-xs">
+              {selectedProject.recentActivity.map((act) => (
+                <div
+                  key={act.id}
+                  className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded"
+                >
+                  <span className="text-slate-800">{act.action}</span>
+                  <span className="text-[10px] font-mono text-slate-400">{act.timestamp}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-4 border border-dashed border-slate-200 rounded text-center text-xs text-slate-400">
+              No recent synchronization events recorded for this project.
+            </div>
+          )}
         </div>
       </div>
     );
@@ -295,9 +339,21 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({
           </p>
         </div>
 
-        <div className="font-mono text-xs text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded">
-          <span>Total Projects: </span>
-          <strong className="text-slate-900 tabular-nums">{projects.length}</strong>
+        <div className="flex items-center gap-2">
+          {onOpenAddProject && (
+            <button
+              onClick={onOpenAddProject}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-[#3525cd] hover:bg-[#2b1ea8] rounded transition-colors shadow-xs shrink-0 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Register Project</span>
+            </button>
+          )}
+
+          <div className="font-mono text-xs text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded">
+            <span>Total Projects: </span>
+            <strong className="text-slate-900 tabular-nums">{projects.length}</strong>
+          </div>
         </div>
       </div>
 
@@ -323,10 +379,11 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({
               className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-slate-700 text-xs focus:outline-none"
             >
               <option value="all">All Teams</option>
-              <option value="Payments">Payments</option>
-              <option value="Platform">Platform</option>
-              <option value="Analytics">Analytics</option>
-              <option value="Developer Infrastructure">Developer Infrastructure</option>
+              {uniqueTeams.map((team) => (
+                <option key={team} value={team}>
+                  {team}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -349,104 +406,130 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({
 
       {/* Projects Table */}
       <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono text-[11px]">
-              <tr>
-                <th className="py-3 px-4 font-semibold">Project</th>
-                <th className="py-3 px-4 font-semibold">Team</th>
-                <th className="py-3 px-4 font-semibold text-center">Members</th>
-                <th className="py-3 px-4 font-semibold">Status</th>
-                <th className="py-3 px-4 font-semibold text-center whitespace-nowrap">Tier & Bus Factor</th>
-                <th className="py-3 px-4 font-semibold">Risk</th>
-                <th className="py-3 px-4 font-semibold text-right">Knowledge Coverage</th>
-                <th className="py-3 px-4 font-semibold">Last Sync</th>
-                <th className="py-3 px-4 font-semibold text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredProjects.map((proj) => (
-                <tr
-                  key={proj.id}
-                  onClick={() => onSelectProject(proj)}
-                  className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
+        {projects.length === 0 ? (
+          <div className="p-12 text-center space-y-3">
+            <FolderGit2 className="w-10 h-10 text-slate-300 mx-auto" />
+            <div className="text-sm font-semibold text-slate-800">No Projects Registered</div>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              There are no projects or services registered in the system yet. Register your services to evaluate bus factors, track continuity risk, and assign contributors.
+            </p>
+            {onOpenAddProject && (
+              <div className="pt-2">
+                <button
+                  onClick={onOpenAddProject}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#3525cd] hover:bg-[#2b1ea8] rounded transition-colors shadow-xs cursor-pointer"
                 >
-                  <td className="py-3 px-4">
-                    <div className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
-                      {proj.name}
-                    </div>
-                    <div className="text-[11px] text-slate-400 font-mono">{proj.code}</div>
-                  </td>
-
-                  <td className="py-3 px-4 text-slate-700">{proj.team}</td>
-
-                  <td className="py-3 px-4 text-center font-mono text-slate-700 tabular-nums">
-                    {proj.members.length}
-                  </td>
-
-                  <td className="py-3 px-4">
-                    <span className="font-medium text-slate-700">{proj.status}</span>
-                  </td>
-
-                  <td className="py-3 px-4 text-center font-mono font-bold tabular-nums">
-                    <span
-                      className={`px-2.5 py-1 rounded border inline-block whitespace-nowrap text-xs ${
-                        proj.busFactor === 1
-                          ? 'bg-rose-50 border-rose-300 text-rose-700'
-                          : proj.busFactor === 2
-                          ? 'bg-amber-50 border-amber-300 text-amber-700'
-                          : 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                      }`}
-                    >
-                      Tier:{proj.tier}&nbsp;&nbsp;&nbsp;&nbsp;BF:{proj.busFactor}
-                    </span>
-                  </td>
-
-                  <td className="py-3 px-4">
-                    <span
-                      className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded border uppercase tabular-nums ${
-                        proj.risk === 'critical'
-                          ? 'bg-rose-50 border-rose-300 text-rose-700'
-                          : proj.risk === 'high'
-                          ? 'bg-amber-50 border-amber-300 text-amber-700'
-                          : proj.risk === 'medium'
-                          ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
-                          : 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                      }`}
-                    >
-                      {proj.risk}
-                    </span>
-                  </td>
-
-                  <td className="py-3 px-4 text-right font-mono tabular-nums">
-                    <span
-                      className={`font-semibold ${
-                        proj.knowledgeCoverage < 70
-                          ? 'text-rose-600'
-                          : proj.knowledgeCoverage < 85
-                          ? 'text-amber-600'
-                          : 'text-emerald-600'
-                      }`}
-                    >
-                      {proj.knowledgeCoverage}%
-                    </span>
-                  </td>
-
-                  <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
-                    {proj.lastSync}
-                  </td>
-
-                  <td className="py-3 px-4 text-right">
-                    <span className="text-xs font-semibold text-indigo-600 group-hover:underline inline-flex items-center gap-1">
-                      <span>View</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </span>
-                  </td>
+                  <Plus className="w-4 h-4" />
+                  <span>Register First Project</span>
+                </button>
+              </div>
+            )}
+          </div>
+        ) : filteredProjects.length === 0 ? (
+          <div className="p-8 text-center space-y-2">
+            <p className="text-xs font-medium text-slate-600">No projects match your active search or filters.</p>
+            <p className="text-[11px] text-slate-400">Try adjusting your query or resetting the team and risk filters.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono text-[11px]">
+                <tr>
+                  <th className="py-3 px-4 font-semibold">Project</th>
+                  <th className="py-3 px-4 font-semibold">Team</th>
+                  <th className="py-3 px-4 font-semibold text-center">Members</th>
+                  <th className="py-3 px-4 font-semibold">Status</th>
+                  <th className="py-3 px-4 font-semibold text-center whitespace-nowrap">Tier & Bus Factor</th>
+                  <th className="py-3 px-4 font-semibold">Risk</th>
+                  <th className="py-3 px-4 font-semibold text-right">Knowledge Coverage</th>
+                  <th className="py-3 px-4 font-semibold">Last Sync</th>
+                  <th className="py-3 px-4 font-semibold text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredProjects.map((proj) => (
+                  <tr
+                    key={proj.id}
+                    onClick={() => onSelectProject(proj)}
+                    className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
+                  >
+                    <td className="py-3 px-4">
+                      <div className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
+                        {proj.name}
+                      </div>
+                      <div className="text-[11px] text-slate-400 font-mono">{proj.code}</div>
+                    </td>
+
+                    <td className="py-3 px-4 text-slate-700">{proj.team}</td>
+
+                    <td className="py-3 px-4 text-center font-mono text-slate-700 tabular-nums">
+                      {proj.members.length}
+                    </td>
+
+                    <td className="py-3 px-4">
+                      <span className="font-medium text-slate-700">{proj.status}</span>
+                    </td>
+
+                    <td className="py-3 px-4 text-center font-mono font-bold tabular-nums">
+                      <span
+                        className={`px-2.5 py-1 rounded border inline-block whitespace-nowrap text-xs ${
+                          proj.busFactor === 1
+                            ? 'bg-rose-50 border-rose-300 text-rose-700'
+                            : proj.busFactor === 2
+                            ? 'bg-amber-50 border-amber-300 text-amber-700'
+                            : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                        }`}
+                      >
+                        Tier:{proj.tier}&nbsp;&nbsp;&nbsp;&nbsp;BF:{proj.busFactor}
+                      </span>
+                    </td>
+
+                    <td className="py-3 px-4">
+                      <span
+                        className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded border uppercase tabular-nums ${
+                          proj.risk === 'critical'
+                            ? 'bg-rose-50 border-rose-300 text-rose-700'
+                            : proj.risk === 'high'
+                            ? 'bg-amber-50 border-amber-300 text-amber-700'
+                            : proj.risk === 'medium'
+                            ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
+                            : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                        }`}
+                      >
+                        {proj.risk}
+                      </span>
+                    </td>
+
+                    <td className="py-3 px-4 text-right font-mono tabular-nums">
+                      <span
+                        className={`font-semibold ${
+                          proj.knowledgeCoverage < 70
+                            ? 'text-rose-600'
+                            : proj.knowledgeCoverage < 85
+                            ? 'text-amber-600'
+                            : 'text-emerald-600'
+                        }`}
+                      >
+                        {proj.knowledgeCoverage}%
+                      </span>
+                    </td>
+
+                    <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
+                      {proj.lastSync}
+                    </td>
+
+                    <td className="py-3 px-4 text-right">
+                      <span className="text-xs font-semibold text-indigo-600 group-hover:underline inline-flex items-center gap-1">
+                        <span>View</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -16,6 +16,15 @@ export type RiskLevel = 'critical' | 'high' | 'medium' | 'low';
 
 export type SourceType = 'github' | 'googledrive' | 'notion' | 'jira';
 
+export interface AdminUser {
+  id?: string;
+  name: string;
+  email: string;
+  role: string;
+  organization: string;
+  avatar?: string;
+}
+
 export interface ConnectedResource {
   id: string;
   sourceType: SourceType;

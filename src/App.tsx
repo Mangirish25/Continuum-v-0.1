@@ -6,14 +6,9 @@ import {
   ConnectedResource,
   Handover,
   NotificationItem,
+  AdminUser,
+  RiskLevel,
 } from './types';
-import {
-  INITIAL_EMPLOYEES,
-  INITIAL_PROJECTS,
-  INITIAL_CONNECTED_RESOURCES,
-  INITIAL_HANDOVERS,
-  INITIAL_NOTIFICATIONS,
-} from './data/mockData';
 
 // Layout components
 import { AppHeader } from './components/layout/AppHeader';
@@ -33,25 +28,171 @@ import { SettingsScreen } from './components/screens/SettingsScreen';
 
 // Modals
 import { AddEmployeeModal } from './components/modals/AddEmployeeModal';
+import { AddProjectModal } from './components/modals/AddProjectModal';
 import { ConnectResourceModal } from './components/modals/ConnectResourceModal';
 import { CreateHandoverModal } from './components/modals/CreateHandoverModal';
 import { CommandPalette } from './components/modals/CommandPalette';
 
 import { supabase } from './lib/supabase';
-import { getSources } from './lib/api';
+import {
+  getCurrentAdmin,
+  getEmployees,
+  getProjects,
+  getSources,
+  getHandovers,
+  getNotifications,
+  RegisteredSource,
+} from './lib/api';
+
+// Data Mappers to translate Backend API schemas to Frontend state
+function mapBackendEmployee(b: any): Employee {
+  const initials = (b.name || '')
+    .split(' ')
+    .map((w: string) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || 'EM';
+
+  return {
+    id: b.id,
+    name: b.name,
+    email: b.email,
+    role: b.role,
+    team: b.team || 'Engineering',
+    avatar: b.avatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=250`,
+    initials,
+    projectsCount: (b.projects || []).length,
+    projects: (b.projects || []).map((p: any) => p.name || p),
+    connectedSourcesCount: b.connected_resources_count || 0,
+    knowledgeScore: Math.round(b.knowledge_score || 0),
+    risk: (b.risk_level?.toLowerCase() || 'low') as RiskLevel,
+    status: b.status === 'LEAVING' ? 'Departing' : b.status === 'INACTIVE' ? 'On Leave' : 'Active',
+    skills: b.skills || [],
+    departureDate: b.departure_date ? new Date(b.departure_date).toLocaleDateString() : undefined,
+  };
+}
+
+function mapBackendProject(p: any): Project {
+  const code = (p.name || 'PRJ')
+    .split(' ')
+    .map((w: string) => w[0])
+    .slice(0, 4)
+    .join('')
+    .toUpperCase();
+
+  return {
+    id: p.id,
+    name: p.name,
+    code: code || 'PRJ',
+    team: p.description || 'Engineering',
+    tier: 1,
+    status: p.status === 'COMPLETED' ? 'Maintenance' : p.status === 'ARCHIVED' ? 'Deprecated' : 'Active',
+    busFactor: p.bus_factor || (p.members?.length === 1 ? 1 : Math.max(1, p.members?.length || 1)),
+    risk: (p.risk_level?.toLowerCase() || 'low') as RiskLevel,
+    knowledgeCoverage: Math.round(100 - (p.continuity_risk || 0)),
+    lastSync: p.updated_at ? new Date(p.updated_at).toLocaleDateString() : 'Pending sync',
+    members: (p.members || []).map((m: any) => ({
+      employeeId: m.id || m.employee_id,
+      name: m.name,
+      contributionPercent: m.contribution_percent || 0,
+      role: m.role || 'Contributor',
+    })),
+    riskReasons: p.risk_reasons || [],
+    connectedSources: {
+      github: [],
+      googledrive: [],
+      notion: [],
+      jira: '',
+    },
+    recentActivity: [],
+  };
+}
+
+function mapBackendSource(s: RegisteredSource): ConnectedResource {
+  return {
+    id: s.id,
+    sourceType: s.source_type as any,
+    name: s.name,
+    url: s.url,
+    employeeId: s.employee_id || '',
+    employeeName: s.employee_name || 'Unassigned',
+    projectName: s.project_name || '',
+    status: (s.status === 'READY' || s.status === 'SYNCED') ? 'connected' : (s.status.toLowerCase() as any),
+    lastSynced: s.last_synced_at ? new Date(s.last_synced_at).toLocaleDateString() : 'Pending sync',
+    details: s.last_sync_error ? `Error: ${s.last_sync_error}` : `Status: ${s.status}`,
+  };
+}
+
+function mapBackendHandover(h: any): Handover {
+  const kp = h.knowledge_package || {};
+  return {
+    id: h.id,
+    employeeId: h.employee_id,
+    employeeName: h.employee_name || 'Outgoing Employee',
+    employeeRole: 'Team Member',
+    employeeTeam: 'Engineering',
+    employeeAvatar: `https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=250`,
+    projectNames: h.project_name ? [h.project_name] : (kp.projects || []),
+    risk: (h.risk_summary?.risk_level?.toLowerCase() || 'medium') as RiskLevel,
+    progress: h.status === 'SENT' ? 100 : h.status === 'READY_FOR_REVIEW' ? 80 : 30,
+    status: h.status === 'SENT' ? 'Email Sent' : h.status === 'READY_FOR_REVIEW' ? 'Generated' : 'Draft',
+    createdAt: h.created_at ? new Date(h.created_at).toLocaleDateString() : 'Recently',
+    targetDate: 'Pending',
+    summary: h.generated_summary || kp.summary || 'Knowledge handover package.',
+    majorContributions: kp.contributions || [],
+    githubWork: kp.github_work || [],
+    jiraTasks: kp.jira_responsibilities || [],
+    driveNotionKnowledge: [...(kp.drive_knowledge || []), ...(kp.notion_knowledge || [])],
+    importantKnowledge: kp.critical_knowledge || [],
+    knowledgeGaps: kp.knowledge_gaps || [],
+    recommendedSuccessor: h.recommended_successor ? {
+      employeeId: h.recommended_successor.employee_id || h.recommended_successor_id || '',
+      name: h.recommended_successor.name || 'Designated Successor',
+      role: 'Engineer',
+      email: h.recommended_successor.email || '',
+      relevancePercent: Math.round((h.recommended_successor.confidence_score || 0.8) * 100),
+      reasons: h.recommended_successor.reason ? [h.recommended_successor.reason] : [],
+    } : {
+      employeeId: '',
+      name: 'Unassigned',
+      role: '',
+      email: '',
+      relevancePercent: 0,
+      reasons: [],
+    },
+    sentAt: h.sent_at ? new Date(h.sent_at).toLocaleDateString() : undefined,
+    sentToEmail: h.recipient_email || undefined,
+  };
+}
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('signin');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
-  // Core domain data state
-  const [employees, setEmployees] = useState<Employee[]>(INITIAL_EMPLOYEES);
-  const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
-  const [connectedResources, setConnectedResources] = useState<ConnectedResource[]>(
-    INITIAL_CONNECTED_RESOURCES
-  );
-  const [handovers, setHandovers] = useState<Handover[]>(INITIAL_HANDOVERS);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+  // Authenticated Admin Profile State
+  const [currentAdmin, setCurrentAdmin] = useState<AdminUser>(() => {
+    const saved = localStorage.getItem('continuum_admin_profile');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        // Ignore JSON error
+      }
+    }
+    return {
+      name: '',
+      email: '',
+      role: 'Company Administrator',
+      organization: '',
+    };
+  });
+
+  // Core domain data state - Initialized with ZERO fake data
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [connectedResources, setConnectedResources] = useState<ConnectedResource[]>([]);
+  const [handovers, setHandovers] = useState<Handover[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
   // Selected item states for detail views
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -60,6 +201,7 @@ export default function App() {
 
   // Modal open states
   const [isAddEmployeeOpen, setIsAddEmployeeOpen] = useState(false);
+  const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
   const [isConnectResourceOpen, setIsConnectResourceOpen] = useState(false);
   const [preselectedEmpForResource, setPreselectedEmpForResource] = useState<Employee | null>(null);
   const [isCreateHandoverOpen, setIsCreateHandoverOpen] = useState(false);
@@ -79,7 +221,6 @@ export default function App() {
           }
         }
       } catch {
-        // Fallback to local dev token check
         const localToken = localStorage.getItem('continuum_auth_token');
         if (localToken) {
           setIsAuthenticated(true);
@@ -120,36 +261,113 @@ export default function App() {
     setCurrentScreen('signin');
   };
 
-  // Synchronize sources from Supabase / Backend API when authenticated
+  // Synchronize Administrator Profile & Domain Data from Backend API when authenticated
   useEffect(() => {
-    if (isAuthenticated) {
-      getSources()
-        .then((sources) => {
-          if (sources && sources.length > 0) {
-            const mappedSources: ConnectedResource[] = sources.map((s) => ({
-              id: s.id,
-              sourceType: s.source_type as any,
-              name: s.name,
-              url: s.url,
-              employeeId: s.employee_id || '',
-              employeeName: s.employee_name || 'Unassigned',
-              projectName: s.project_name || '',
-              status: (s.status === 'READY' || s.status === 'SYNCED') ? 'connected' : (s.status.toLowerCase() as any),
-              lastSynced: s.last_synced_at ? new Date(s.last_synced_at).toLocaleDateString() : 'Pending initial sync',
-              details: s.last_sync_error ? `Error: ${s.last_sync_error}` : `Status: ${s.status}`,
-            }));
-            setConnectedResources((prev) => {
-              const existingIds = new Set(mappedSources.map((m) => m.id));
-              const nonOverlapping = prev.filter((p) => !existingIds.has(p.id));
-              return [...mappedSources, ...nonOverlapping];
-            });
-          }
-        })
-        .catch(() => {
-          // Offline/mock fallback
-        });
+    if (!isAuthenticated) return;
+    let isMounted = true;
+
+    async function syncAllData() {
+      // 1. Fetch authenticated admin profile
+      try {
+        const adminProfile = await getCurrentAdmin();
+        if (adminProfile && isMounted) {
+          setCurrentAdmin((prev) => {
+            const rawDomain = adminProfile.email.includes('@')
+              ? adminProfile.email.split('@')[1].split('.')[0]
+              : '';
+            const domainOrg = rawDomain
+              ? rawDomain.charAt(0).toUpperCase() + rawDomain.slice(1) + ' Corp'
+              : 'Continuum Platform';
+
+            const updated: AdminUser = {
+              id: adminProfile.id,
+              name: adminProfile.name || prev.name || 'Administrator',
+              email: adminProfile.email || prev.email,
+              role: adminProfile.role || 'Company Administrator',
+              organization: prev.organization || domainOrg,
+            };
+            localStorage.setItem('continuum_admin_profile', JSON.stringify(updated));
+            return updated;
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to sync admin profile:', err);
+      }
+
+      // 2. Fetch employees
+      try {
+        const empData = await getEmployees();
+        if (isMounted && Array.isArray(empData)) {
+          setEmployees(empData.map(mapBackendEmployee));
+        }
+      } catch (err) {
+        console.warn('Failed to sync employees:', err);
+      }
+
+      // 3. Fetch projects
+      try {
+        const projData = await getProjects();
+        if (isMounted && Array.isArray(projData)) {
+          setProjects(projData.map(mapBackendProject));
+        }
+      } catch (err) {
+        console.warn('Failed to sync projects:', err);
+      }
+
+      // 4. Fetch sources
+      try {
+        const srcData = await getSources();
+        if (isMounted && Array.isArray(srcData)) {
+          setConnectedResources(srcData.map(mapBackendSource));
+        }
+      } catch (err) {
+        console.warn('Failed to sync sources:', err);
+      }
+
+      // 5. Fetch handovers
+      try {
+        const hndData = await getHandovers();
+        if (isMounted && Array.isArray(hndData)) {
+          setHandovers(hndData.map(mapBackendHandover));
+        }
+      } catch (err) {
+        console.warn('Failed to sync handovers:', err);
+      }
+
+      // 6. Fetch notifications
+      try {
+        const notifData = await getNotifications();
+        if (isMounted && Array.isArray(notifData)) {
+          setNotifications(
+            notifData.map((n: any) => ({
+              id: n.id,
+              title: n.title,
+              description: n.message,
+              timestamp: n.created_at ? new Date(n.created_at).toLocaleTimeString() : 'Recently',
+              read: n.read || false,
+              type: (n.type?.toLowerCase() || 'sync') as any,
+            }))
+          );
+        }
+      } catch (err) {
+        console.warn('Failed to sync notifications:', err);
+      }
     }
+
+    syncAllData();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isAuthenticated]);
+
+  const handleUpdateAdminUser = (updated: Partial<AdminUser>) => {
+    setCurrentAdmin((prev) => {
+      const next = { ...prev, ...updated };
+      localStorage.setItem('continuum_admin_profile', JSON.stringify(next));
+      return next;
+    });
+  };
 
   // Global keyboard shortcut for Command Palette (⌘K)
   useEffect(() => {
@@ -163,14 +381,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Handlers for Add Employee (Section 10)
+  // Handlers for Add Employee
   const handleCreateEmployee = (newEmp: Employee) => {
     setEmployees((prev) => [newEmp, ...prev]);
     setSelectedEmployee(newEmp);
-    // After creation, immediately take the admin to the employee profile!
     setCurrentScreen('employee_profile');
 
-    // Add notification
     const newNotif: NotificationItem = {
       id: `notif-${Date.now()}`,
       title: `Employee added: ${newEmp.name}`,
@@ -182,11 +398,27 @@ export default function App() {
     setNotifications((prev) => [newNotif, ...prev]);
   };
 
-  // Handlers for Connect Resource (Section 12)
+  // Handlers for Add Project
+  const handleProjectCreated = (newProj: Project) => {
+    setProjects((prev) => [newProj, ...prev]);
+    setSelectedProject(newProj);
+    setCurrentScreen('project_detail');
+
+    const newNotif: NotificationItem = {
+      id: `notif-${Date.now()}`,
+      title: `Project registered: ${newProj.name}`,
+      description: `${newProj.team} project created. Bus factor analysis initiated.`,
+      timestamp: 'Just now',
+      read: false,
+      type: 'sync',
+    };
+    setNotifications((prev) => [newNotif, ...prev]);
+  };
+
+  // Handlers for Connect Resource
   const handleResourceConnected = (newRes: ConnectedResource) => {
     setConnectedResources((prev) => [newRes, ...prev]);
 
-    // Update employee's connectedSourcesCount
     setEmployees((prev) =>
       prev.map((e) =>
         e.id === newRes.employeeId
@@ -195,7 +427,6 @@ export default function App() {
       )
     );
 
-    // Add notification
     const newNotif: NotificationItem = {
       id: `notif-${Date.now()}`,
       title: `${newRes.name} connected`,
@@ -221,7 +452,7 @@ export default function App() {
     }
   };
 
-  // Handlers for Handover creation & updates (Section 20 & 21)
+  // Handlers for Handover creation & updates
   const handleHandoverCreated = (newHnd: Handover) => {
     setHandovers((prev) => [newHnd, ...prev]);
     setSelectedHandover(newHnd);
@@ -315,6 +546,15 @@ export default function App() {
     (p) => p.risk === 'critical' || p.busFactor === 1
   ).length;
 
+  const overallRiskLevel =
+    criticalProjectsCount > 0
+      ? 'CRITICAL'
+      : employees.some((e) => e.status === 'Departing' || e.risk === 'critical')
+      ? 'HIGH'
+      : projects.length > 0
+      ? 'LOW'
+      : 'NONE';
+
   return (
     <div className="min-h-screen bg-[#faf8ff] text-[#131b2e] flex flex-col font-sans selection:bg-indigo-100 selection:text-indigo-900">
       {/* If on Sign In screen, render full-screen login */}
@@ -327,7 +567,7 @@ export default function App() {
         />
       ) : (
         <>
-          {/* Top Bar (Section 6) - Removed from the first 2 screens (Sign In & Dashboard) as requested */}
+          {/* Top Bar */}
           {currentScreen !== 'dashboard' && (
             <AppHeader
               currentScreen={currentScreen}
@@ -345,12 +585,13 @@ export default function App() {
               onMarkAllNotificationsRead={() =>
                 setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
               }
+              adminUser={currentAdmin}
             />
           )}
 
           {/* Main Operational Layout with Persistent Left Sidebar */}
           <div className="flex-1 max-w-[1536px] w-full mx-auto flex">
-            {/* Sidebar (Section 5 & 35) */}
+            {/* Sidebar */}
             <Sidebar
               currentScreen={currentScreen}
               onNavigate={(screenId) => {
@@ -363,6 +604,8 @@ export default function App() {
               criticalProjectsCount={criticalProjectsCount}
               isOpenMobile={isMobileSidebarOpen}
               onCloseMobile={() => setIsMobileSidebarOpen(false)}
+              adminUser={currentAdmin}
+              overallRiskLevel={overallRiskLevel}
             />
 
             {/* Screen Content Viewport */}
@@ -373,6 +616,8 @@ export default function App() {
                   employees={employees}
                   projects={projects}
                   handovers={handovers}
+                  connectedResources={connectedResources}
+                  adminUser={currentAdmin}
                   onSelectEmployee={handleSelectEmployee}
                   onSelectProject={handleSelectProject}
                   onSelectHandover={handleSelectHandover}
@@ -423,6 +668,7 @@ export default function App() {
                     setPreselectedEmpForHandover(null);
                     setIsCreateHandoverOpen(true);
                   }}
+                  onOpenAddProject={() => setIsAddProjectOpen(true)}
                 />
               )}
 
@@ -451,6 +697,7 @@ export default function App() {
                     setIsCreateHandoverOpen(true);
                   }}
                   onUpdateHandover={handleUpdateHandover}
+                  adminUser={currentAdmin}
                 />
               )}
 
@@ -466,7 +713,12 @@ export default function App() {
               )}
 
               {currentScreen === 'settings' && (
-                <SettingsScreen onNavigate={(s) => setCurrentScreen(s)} />
+                <SettingsScreen
+                  onNavigate={(s) => setCurrentScreen(s)}
+                  adminUser={currentAdmin}
+                  onUpdateAdminUser={handleUpdateAdminUser}
+                  connectedResources={connectedResources}
+                />
               )}
             </main>
           </div>
@@ -478,6 +730,13 @@ export default function App() {
         isOpen={isAddEmployeeOpen}
         onClose={() => setIsAddEmployeeOpen(false)}
         onCreateEmployee={handleCreateEmployee}
+      />
+
+      <AddProjectModal
+        isOpen={isAddProjectOpen}
+        onClose={() => setIsAddProjectOpen(false)}
+        employees={employees}
+        onProjectCreated={handleProjectCreated}
       />
 
       <ConnectResourceModal

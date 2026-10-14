@@ -1,24 +1,86 @@
-import React, { useState } from 'react';
-import { ScreenId } from '../../types';
-import { ADMIN_USER } from '../../data/mockData';
+import React, { useState, useEffect } from 'react';
+import { ScreenId, AdminUser, ConnectedResource } from '../../types';
 import { Settings, User, Building, Mail, Network, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 interface SettingsScreenProps {
   onNavigate: (screen: ScreenId) => void;
+  adminUser: AdminUser;
+  onUpdateAdminUser: (updated: Partial<AdminUser>) => void;
+  connectedResources: ConnectedResource[];
 }
 
-export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate }) => {
-  const [adminName, setAdminName] = useState(ADMIN_USER.name);
-  const [adminEmail, setAdminEmail] = useState(ADMIN_USER.email);
-  const [orgName, setOrgName] = useState(ADMIN_USER.organization);
-  const [outboundEmail, setOutboundEmail] = useState('notifications@continuum.acme.corp');
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({
+  onNavigate,
+  adminUser,
+  onUpdateAdminUser,
+  connectedResources,
+}) => {
+  const [adminName, setAdminName] = useState(adminUser.name || '');
+  const [adminEmail, setAdminEmail] = useState(adminUser.email || '');
+  const [orgName, setOrgName] = useState(adminUser.organization || '');
+  const [outboundEmail, setOutboundEmail] = useState(() => {
+    const saved = localStorage.getItem('continuum_outbound_email');
+    if (saved) return saved;
+    const domain = adminUser.email.includes('@') ? adminUser.email.split('@')[1] : 'continuum.internal';
+    return `notifications@${domain}`;
+  });
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  // Synchronize when adminUser updates from backend
+  useEffect(() => {
+    if (adminUser.name) setAdminName(adminUser.name);
+    if (adminUser.email) setAdminEmail(adminUser.email);
+    if (adminUser.organization) setOrgName(adminUser.organization);
+  }, [adminUser]);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    onUpdateAdminUser({
+      name: adminName.trim(),
+      email: adminEmail.trim(),
+      organization: orgName.trim(),
+    });
+    localStorage.setItem('continuum_outbound_email', outboundEmail.trim());
     setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+    setTimeout(() => setSavedSuccess(false), 3500);
   };
+
+  // Dynamic integration counts derived directly from connected resources
+  const githubCount = connectedResources.filter(
+    (r) => r.sourceType.toLowerCase() === 'github'
+  ).length;
+  const driveCount = connectedResources.filter(
+    (r) => r.sourceType.toLowerCase() === 'googledrive' || r.sourceType.toLowerCase() === 'google_drive'
+  ).length;
+  const notionCount = connectedResources.filter(
+    (r) => r.sourceType.toLowerCase() === 'notion'
+  ).length;
+  const jiraCount = connectedResources.filter(
+    (r) => r.sourceType.toLowerCase() === 'jira'
+  ).length;
+
+  const integrationCards = [
+    {
+      name: 'GitHub',
+      status: githubCount > 0 ? `${githubCount} Repos` : '0 Repos Connected',
+      connected: githubCount > 0,
+    },
+    {
+      name: 'Google Drive',
+      status: driveCount > 0 ? `${driveCount} Folders` : '0 Folders Connected',
+      connected: driveCount > 0,
+    },
+    {
+      name: 'Notion',
+      status: notionCount > 0 ? `${notionCount} Pages` : '0 Pages Connected',
+      connected: notionCount > 0,
+    },
+    {
+      name: 'Jira Workspace',
+      status: jiraCount > 0 ? `${jiraCount} Workspaces` : '0 Workspaces Connected',
+      connected: jiraCount > 0,
+    },
+  ];
 
   return (
     <div className="space-y-6 max-w-4xl">
@@ -35,7 +97,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate }) =>
       {savedSuccess && (
         <div className="p-3 bg-emerald-50 border border-emerald-300 rounded text-xs font-semibold text-emerald-900 flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>Settings saved successfully.</span>
+          <span>Administrator settings saved and updated successfully.</span>
         </div>
       )}
 
@@ -58,6 +120,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate }) =>
                 type="text"
                 value={adminName}
                 onChange={(e) => setAdminName(e.target.value)}
+                placeholder="Enter administrator full name"
+                required
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:bg-white"
               />
             </div>
@@ -70,6 +134,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate }) =>
                 type="email"
                 value={adminEmail}
                 onChange={(e) => setAdminEmail(e.target.value)}
+                placeholder="admin@company.com"
+                required
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-900 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:bg-white"
               />
             </div>
@@ -94,6 +160,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate }) =>
                 type="text"
                 value={orgName}
                 onChange={(e) => setOrgName(e.target.value)}
+                placeholder="e.g. Acme Technologies"
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:bg-white"
               />
             </div>
@@ -106,6 +173,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate }) =>
                 type="email"
                 value={outboundEmail}
                 onChange={(e) => setOutboundEmail(e.target.value)}
+                placeholder="notifications@company.com"
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-900 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:bg-white"
               />
             </div>
@@ -135,26 +203,27 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onNavigate }) =>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { name: 'GitHub', status: '12 Repos', icon: '🟢' },
-              { name: 'Google Drive', status: '8 Folders', icon: '🟢' },
-              { name: 'Notion', status: '6 Pages', icon: '🟢' },
-              { name: 'Jira Workspace', status: 'Company PAY', icon: '🟢' },
-            ].map((conn, idx) => (
-              <div key={idx} className="p-2.5 bg-slate-50 border border-slate-200 rounded">
-                <div className="font-semibold text-slate-800">{conn.name}</div>
-                <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                  {conn.icon} {conn.status}
+            {integrationCards.map((integ) => (
+              <div
+                key={integ.name}
+                className="p-3 bg-slate-50/70 border border-slate-200 rounded flex items-center justify-between"
+              >
+                <div>
+                  <div className="font-semibold text-slate-900">{integ.name}</div>
+                  <div className="text-[11px] font-mono text-slate-500 mt-0.5">
+                    {integ.status}
+                  </div>
                 </div>
+                <span className="text-xs">{integ.connected ? '🟢' : '⚪'}</span>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex justify-end pt-2">
           <button
             type="submit"
-            className="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded transition-colors shadow-xs cursor-pointer"
+            className="px-5 py-2 text-xs font-semibold text-white bg-[#3525cd] hover:bg-[#2b1ea8] rounded transition-colors shadow-xs cursor-pointer"
           >
             Save Settings
           </button>

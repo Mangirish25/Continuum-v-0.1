@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScreenId } from '../../types';
+import { ScreenId, AdminUser } from '../../types';
 import {
   LayoutDashboard,
   Users,
@@ -20,6 +20,8 @@ interface SidebarProps {
   criticalProjectsCount: number;
   isOpenMobile?: boolean;
   onCloseMobile?: () => void;
+  adminUser?: AdminUser;
+  overallRiskLevel?: string;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -29,6 +31,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   criticalProjectsCount,
   isOpenMobile = false,
   onCloseMobile,
+  adminUser,
+  overallRiskLevel,
 }) => {
   const mainMenuItems = [
     {
@@ -60,7 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'risk' as ScreenId,
       label: 'Risk',
       icon: ShieldAlert,
-      badge: 'HIGH',
+      badge: overallRiskLevel && overallRiskLevel !== 'LOW' && overallRiskLevel !== 'NONE' ? overallRiskLevel : null,
       badgeRisk: true,
     },
     {
@@ -105,8 +109,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="text-xs font-bold tracking-tight text-slate-900 leading-none">
                 CONTINUUM
               </div>
-              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                Acme Technologies
+              <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate max-w-[120px]">
+                {adminUser?.organization || 'Continuum Platform'}
               </div>
             </div>
           </div>

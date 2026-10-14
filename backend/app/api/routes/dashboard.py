@@ -41,11 +41,24 @@ async def get_dashboard_summary(
             else:
                 bus_dist["3+"] += 1
 
-    recent_act = [
-        {"type": "SYNC_COMPLETED", "message": "Synchronized GitHub repository 'continuum/payment-gateway'", "timestamp": "Just now"},
-        {"type": "RISK_CHANGED", "message": "Project 'Payment Platform' Bus Factor identified as 1", "timestamp": "10 mins ago"},
-        {"type": "HANDOVER_GENERATED", "message": "Handover generated for Rahul Sharma", "timestamp": "1 hour ago"}
-    ]
+    recent_act = []
+    notif_stmt = select(Notification).order_by(Notification.created_at.desc()).limit(10)
+    notifs = (await db.execute(notif_stmt)).scalars().all()
+    for n in notifs:
+        recent_act.append({
+            "type": n.type,
+            "message": f"{n.title}: {n.message}" if n.title else n.message,
+            "timestamp": n.created_at.strftime("%Y-%m-%d %H:%M") if n.created_at else "Recently"
+        })
+
+    if not recent_act:
+        res_stmt = select(EmployeeResource).order_by(EmployeeResource.created_at.desc()).limit(5)
+        for r in (await db.execute(res_stmt)).scalars().all():
+            recent_act.append({
+                "type": "RESOURCE_CONNECTED",
+                "message": f"Connected {r.provider} resource '{r.name}'",
+                "timestamp": r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "Recently"
+            })
 
     return DashboardSummaryOut(
         employee_count=emp_count,

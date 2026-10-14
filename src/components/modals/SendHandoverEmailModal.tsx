@@ -7,6 +7,7 @@ interface SendHandoverEmailModalProps {
   onClose: () => void;
   handover: Handover;
   onSendSuccess: (recipientEmail: string) => void;
+  adminEmail?: string;
 }
 
 export const SendHandoverEmailModal: React.FC<SendHandoverEmailModalProps> = ({
@@ -14,14 +15,15 @@ export const SendHandoverEmailModal: React.FC<SendHandoverEmailModalProps> = ({
   onClose,
   handover,
   onSendSuccess,
+  adminEmail,
 }) => {
   const [recipientEmail, setRecipientEmail] = useState(
-    handover.recommendedSuccessor.email || 'priya.deshmukh@acme.corp'
+    handover.recommendedSuccessor.email || ''
   );
   const [recipientName, setRecipientName] = useState(
-    handover.recommendedSuccessor.name || 'Priya Deshmukh'
+    handover.recommendedSuccessor.name || ''
   );
-  const [ccAdmin, setCcAdmin] = useState(true);
+  const [ccAdmin, setCcAdmin] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
   if (!isOpen) return null;
@@ -102,15 +104,17 @@ export const SendHandoverEmailModal: React.FC<SendHandoverEmailModalProps> = ({
             />
           </div>
 
-          <label className="flex items-center gap-2 cursor-pointer text-slate-700">
-            <input
-              type="checkbox"
-              checked={ccAdmin}
-              onChange={(e) => setCcAdmin(e.target.checked)}
-              className="rounded text-indigo-600 focus:ring-indigo-500"
-            />
-            <span>CC Company Administrator (admin@acme.corp)</span>
-          </label>
+          {adminEmail && (
+            <label className="flex items-center gap-2 cursor-pointer text-slate-700">
+              <input
+                type="checkbox"
+                checked={ccAdmin}
+                onChange={(e) => setCcAdmin(e.target.checked)}
+                className="rounded text-indigo-600 focus:ring-indigo-500"
+              />
+              <span>CC Company Administrator ({adminEmail})</span>
+            </label>
+          )}
 
           {/* Handover contents preview list */}
           <div>

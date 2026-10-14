@@ -149,10 +149,10 @@ export const EmployeeProfileScreen: React.FC<EmployeeProfileScreenProps> = ({
             <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
               <div className="font-bold text-amber-950">
-                Departure Scheduled for {employee.departureDate || 'November 2026'}
+                Departure Scheduled for {employee.departureDate || 'Soon'}
               </div>
               <p className="text-amber-800 text-[11px] mt-0.5">
-                {employee.name} owns critical knowledge across Payment Platform and Authentication Service. Create a knowledge handover to prevent institutional knowledge loss.
+                {employee.name} has a scheduled departure. Create a knowledge handover to prevent institutional knowledge loss across assigned projects.
               </p>
             </div>
           </div>
@@ -171,14 +171,18 @@ export const EmployeeProfileScreen: React.FC<EmployeeProfileScreenProps> = ({
           Skills / Knowledge Areas
         </h2>
         <div className="flex flex-wrap gap-1.5">
-          {employee.skills.map((skill, idx) => (
-            <span
-              key={idx}
-              className="px-2.5 py-1 bg-slate-100 border border-slate-200 text-slate-700 rounded text-xs font-medium"
-            >
-              {skill}
-            </span>
-          ))}
+          {employee.skills && employee.skills.length > 0 ? (
+            employee.skills.map((skill, idx) => (
+              <span
+                key={idx}
+                className="px-2.5 py-1 bg-slate-100 border border-slate-200 text-slate-700 rounded text-xs font-medium"
+              >
+                {skill}
+              </span>
+            ))
+          ) : (
+            <p className="text-xs text-slate-400 italic">No skills or domains tagged yet.</p>
+          )}
         </div>
       </div>
 
@@ -191,62 +195,68 @@ export const EmployeeProfileScreen: React.FC<EmployeeProfileScreenProps> = ({
           <span className="text-[11px] text-slate-400 font-mono">Contribution Breakdown</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {employeeProjects.map((proj) => {
-            const memberInfo = proj.members.find((m) => m.employeeId === employee.id);
-            return (
-              <div
-                key={proj.id}
-                onClick={() => onSelectProject(proj)}
-                className="p-3.5 border border-slate-200 hover:border-indigo-400 rounded cursor-pointer transition-all hover:bg-slate-50/50 group space-y-2"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="font-semibold text-xs text-slate-900 group-hover:text-indigo-600 transition-colors">
-                      {proj.name}
-                    </h3>
-                    <div className="text-[11px] text-slate-400 font-mono">
-                      {proj.code} · Team: {proj.team}
+        {employeeProjects.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {employeeProjects.map((proj) => {
+              const memberInfo = proj.members.find((m) => m.employeeId === employee.id);
+              return (
+                <div
+                  key={proj.id}
+                  onClick={() => onSelectProject(proj)}
+                  className="p-3.5 border border-slate-200 hover:border-indigo-400 rounded cursor-pointer transition-all hover:bg-slate-50/50 group space-y-2"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="font-semibold text-xs text-slate-900 group-hover:text-indigo-600 transition-colors">
+                        {proj.name}
+                      </h3>
+                      <div className="text-[11px] text-slate-400 font-mono">
+                        {proj.code} · Team: {proj.team}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200 whitespace-nowrap">
+                        Tier:{proj.tier}&nbsp;&nbsp;&nbsp;&nbsp;BF:{proj.busFactor}
+                      </span>
+                      <span
+                        className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded border uppercase whitespace-nowrap ${
+                          proj.risk === 'critical'
+                            ? 'bg-rose-50 border-rose-300 text-rose-700'
+                            : proj.risk === 'high'
+                            ? 'bg-amber-50 border-amber-300 text-amber-700'
+                            : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                        }`}
+                      >
+                        {proj.risk}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-800 border border-slate-200 whitespace-nowrap">
-                      Tier:{proj.tier}&nbsp;&nbsp;&nbsp;&nbsp;BF:{proj.busFactor}
-                    </span>
-                    <span
-                      className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded border uppercase whitespace-nowrap ${
-                        proj.risk === 'critical'
-                          ? 'bg-rose-50 border-rose-300 text-rose-700'
-                          : proj.risk === 'high'
-                          ? 'bg-amber-50 border-amber-300 text-amber-700'
-                          : 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                      }`}
-                    >
-                      {proj.risk}
-                    </span>
-                  </div>
-                </div>
 
-                {memberInfo && (
-                  <div className="space-y-1 pt-1 border-t border-slate-100 text-xs">
-                    <div className="flex items-center justify-between font-mono text-[11px]">
-                      <span className="text-slate-500">Knowledge Ownership:</span>
-                      <strong className="text-slate-900 tabular-nums">
-                        {memberInfo.contributionPercent}%
-                      </strong>
+                  {memberInfo && (
+                    <div className="space-y-1 pt-1 border-t border-slate-100 text-xs">
+                      <div className="flex items-center justify-between font-mono text-[11px]">
+                        <span className="text-slate-500">Knowledge Ownership:</span>
+                        <strong className="text-slate-900 tabular-nums">
+                          {memberInfo.contributionPercent}%
+                        </strong>
+                      </div>
+                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-indigo-600"
+                          style={{ width: `${memberInfo.contributionPercent}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-indigo-600"
-                        style={{ width: `${memberInfo.contributionPercent}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="p-6 border border-dashed border-slate-200 rounded text-center text-xs text-slate-500">
+            <p>This employee is not assigned to any projects yet.</p>
+          </div>
+        )}
       </div>
 
       {/* Connected Resources Section (Critical Section 11) */}

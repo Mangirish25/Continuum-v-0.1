@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { ScreenId, NotificationItem } from '../../types';
-import { ADMIN_USER } from '../../data/mockData';
+import { ScreenId, NotificationItem, AdminUser } from '../../types';
 import { Search, Bell, LogOut, Menu, User } from 'lucide-react';
 import { NotificationsDropdown } from '../modals/NotificationsDropdown';
 
@@ -13,6 +12,7 @@ interface AppHeaderProps {
   onToggleMobileMenu?: () => void;
   notifications: NotificationItem[];
   onMarkAllNotificationsRead: () => void;
+  adminUser?: AdminUser;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
@@ -24,6 +24,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onToggleMobileMenu,
   notifications,
   onMarkAllNotificationsRead,
+  adminUser,
 }) => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
@@ -140,19 +141,30 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               className="flex items-center gap-2 cursor-pointer group"
             >
               <div className="w-7 h-7 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center text-xs font-semibold text-indigo-700 overflow-hidden shrink-0">
-                <img
-                  src={ADMIN_USER.avatar}
-                  alt={ADMIN_USER.name}
-                  className="w-full h-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
+                {adminUser?.avatar ? (
+                  <img
+                    src={adminUser.avatar}
+                    alt={adminUser.name || 'Admin'}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span>
+                    {(adminUser?.name || adminUser?.email || 'AD')
+                      .split(' ')
+                      .map((w) => w[0])
+                      .slice(0, 2)
+                      .join('')
+                      .toUpperCase()}
+                  </span>
+                )}
               </div>
               <div className="hidden md:block text-left text-xs leading-tight">
-                <div className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
-                  Admin
+                <div className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors truncate max-w-[120px]">
+                  {adminUser?.name || 'Administrator'}
                 </div>
-                <div className="text-[10px] text-slate-400 font-mono">
-                  {ADMIN_USER.organization}
+                <div className="text-[10px] text-slate-400 font-mono truncate max-w-[120px]">
+                  {adminUser?.organization || 'Continuum'}
                 </div>
               </div>
             </div>

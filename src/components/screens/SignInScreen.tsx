@@ -357,7 +357,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess }) =
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
               <span>Admin-Only Enterprise System (Supabase Auth)</span>
             </span>
-            <span className="font-mono text-slate-400">Acme Technologies</span>
+            <span className="font-mono text-slate-400">Continuum</span>
           </div>
         </div>
       </div>

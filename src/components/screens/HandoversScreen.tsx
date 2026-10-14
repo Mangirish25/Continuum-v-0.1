@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Handover, Employee } from '../../types';
+import { Handover, Employee, AdminUser } from '../../types';
 import {
   ArrowRightLeft,
   Plus,
@@ -24,6 +24,7 @@ interface HandoversScreenProps {
   onSelectHandover: (handover: Handover | null) => void;
   onOpenCreateHandover: () => void;
   onUpdateHandover: (updated: Handover) => void;
+  adminUser: AdminUser;
 }
 
 export const HandoversScreen: React.FC<HandoversScreenProps> = ({
@@ -32,6 +33,7 @@ export const HandoversScreen: React.FC<HandoversScreenProps> = ({
   onSelectHandover,
   onOpenCreateHandover,
   onUpdateHandover,
+  adminUser,
 }) => {
   const [isSendEmailModalOpen, setIsSendEmailModalOpen] = useState(false);
   const [emailSuccessBanner, setEmailSuccessBanner] = useState<string | null>(null);
@@ -257,31 +259,41 @@ export const HandoversScreen: React.FC<HandoversScreenProps> = ({
             </span>
           </div>
 
-          <div className="p-3 bg-indigo-50/50 border border-indigo-200 rounded space-y-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="font-bold text-slate-900 text-sm">
-                  {selectedHandover.recommendedSuccessor.name}
-                </span>
-                <span className="text-slate-500 text-xs ml-2">
-                  ({selectedHandover.recommendedSuccessor.role})
+          {selectedHandover.recommendedSuccessor && selectedHandover.recommendedSuccessor.name && selectedHandover.recommendedSuccessor.name !== 'Unassigned' ? (
+            <div className="p-3 bg-indigo-50/50 border border-indigo-200 rounded space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-slate-900 text-sm">
+                    {selectedHandover.recommendedSuccessor.name}
+                  </span>
+                  {selectedHandover.recommendedSuccessor.role && (
+                    <span className="text-slate-500 text-xs ml-2">
+                      ({selectedHandover.recommendedSuccessor.role})
+                    </span>
+                  )}
+                </div>
+                <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded">
+                  Relevance: {selectedHandover.recommendedSuccessor.relevancePercent}%
                 </span>
               </div>
-              <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded">
-                Relevance: {selectedHandover.recommendedSuccessor.relevancePercent}%
-              </span>
-            </div>
 
-            <div className="pt-1 text-slate-700 space-y-1">
-              <div className="font-semibold text-slate-900 text-[11px]">Why:</div>
-              {selectedHandover.recommendedSuccessor.reasons.map((r, idx) => (
-                <div key={idx} className="flex items-start gap-1.5 text-[11px]">
-                  <span className="text-indigo-600 font-bold">&bull;</span>
-                  <span>{r}</span>
+              {selectedHandover.recommendedSuccessor.reasons && selectedHandover.recommendedSuccessor.reasons.length > 0 && (
+                <div className="pt-1 text-slate-700 space-y-1">
+                  <div className="font-semibold text-slate-900 text-[11px]">Why:</div>
+                  {selectedHandover.recommendedSuccessor.reasons.map((r, idx) => (
+                    <div key={idx} className="flex items-start gap-1.5 text-[11px]">
+                      <span className="text-indigo-600 font-bold">&bull;</span>
+                      <span>{r}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          </div>
+          ) : (
+            <div className="p-4 border border-dashed border-indigo-200 rounded text-center text-xs text-slate-500">
+              No successor recommended or assigned yet for this handover package.
+            </div>
+          )}
         </div>
 
         {/* Bottom Send Handover CTA */}
@@ -309,6 +321,7 @@ export const HandoversScreen: React.FC<HandoversScreenProps> = ({
           onClose={() => setIsSendEmailModalOpen(false)}
           handover={selectedHandover}
           onSendSuccess={handleSendEmailSuccess}
+          adminEmail={adminUser.email}
         />
       </div>
     );
@@ -339,92 +352,111 @@ export const HandoversScreen: React.FC<HandoversScreenProps> = ({
 
       {/* Table (Section 19: Employee, Project, Risk, Progress, Status, Created, Actions) */}
       <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono text-[11px]">
-              <tr>
-                <th className="py-3 px-4 font-semibold">Employee</th>
-                <th className="py-3 px-4 font-semibold">Project</th>
-                <th className="py-3 px-4 font-semibold">Risk</th>
-                <th className="py-3 px-4 font-semibold text-center">Progress</th>
-                <th className="py-3 px-4 font-semibold">Status</th>
-                <th className="py-3 px-4 font-semibold">Created</th>
-                <th className="py-3 px-4 font-semibold text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {handovers.map((hnd) => (
-                <tr
-                  key={hnd.id}
-                  onClick={() => onSelectHandover(hnd)}
-                  className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
-                >
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2.5">
-                      <img
-                        src={hnd.employeeAvatar}
-                        alt={hnd.employeeName}
-                        className="w-8 h-8 rounded-full object-cover border border-slate-200 shrink-0"
-                        referrerPolicy="no-referrer"
-                      />
-                      <div>
-                        <div className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
-                          {hnd.employeeName}
-                        </div>
-                        <div className="text-[11px] text-slate-400">{hnd.employeeRole}</div>
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="py-3 px-4 font-medium text-slate-800">
-                    {hnd.projectNames.join(', ')}
-                  </td>
-
-                  <td className="py-3 px-4">
-                    <span
-                      className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded border uppercase tabular-nums ${
-                        hnd.risk === 'critical'
-                          ? 'bg-rose-50 border-rose-300 text-rose-700'
-                          : hnd.risk === 'high'
-                          ? 'bg-amber-50 border-amber-300 text-amber-700'
-                          : 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                      }`}
-                    >
-                      {hnd.risk}
-                    </span>
-                  </td>
-
-                  <td className="py-3 px-4 text-center font-mono font-bold tabular-nums">
-                    {hnd.progress}%
-                  </td>
-
-                  <td className="py-3 px-4">
-                    <span
-                      className={`font-mono text-[11px] font-medium px-2 py-0.5 rounded ${
-                        hnd.status === 'Email Sent'
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-slate-100 text-slate-700'
-                      }`}
-                    >
-                      {hnd.status}
-                    </span>
-                  </td>
-
-                  <td className="py-3 px-4 font-mono text-[11px] text-slate-500">
-                    {hnd.createdAt}
-                  </td>
-
-                  <td className="py-3 px-4 text-right">
-                    <span className="text-xs font-semibold text-indigo-600 group-hover:underline inline-flex items-center gap-1">
-                      <span>View Handover</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </span>
-                  </td>
+        {handovers.length === 0 ? (
+          <div className="p-12 text-center space-y-3">
+            <ArrowRightLeft className="w-10 h-10 text-slate-300 mx-auto" />
+            <div className="text-sm font-semibold text-slate-800">No Knowledge Handovers Yet</div>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              No employee handover packages have been synthesized. Create a handover to capture knowledge packages, detect gaps, and recommend successors.
+            </p>
+            <div className="pt-2">
+              <button
+                onClick={onOpenCreateHandover}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#3525cd] hover:bg-[#2b1ea8] rounded transition-colors shadow-xs cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create First Handover</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono text-[11px]">
+                <tr>
+                  <th className="py-3 px-4 font-semibold">Employee</th>
+                  <th className="py-3 px-4 font-semibold">Project</th>
+                  <th className="py-3 px-4 font-semibold">Risk</th>
+                  <th className="py-3 px-4 font-semibold text-center">Progress</th>
+                  <th className="py-3 px-4 font-semibold">Status</th>
+                  <th className="py-3 px-4 font-semibold">Created</th>
+                  <th className="py-3 px-4 font-semibold text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {handovers.map((hnd) => (
+                  <tr
+                    key={hnd.id}
+                    onClick={() => onSelectHandover(hnd)}
+                    className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
+                  >
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2.5">
+                        <img
+                          src={hnd.employeeAvatar}
+                          alt={hnd.employeeName}
+                          className="w-8 h-8 rounded-full object-cover border border-slate-200 shrink-0"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div>
+                          <div className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">
+                            {hnd.employeeName}
+                          </div>
+                          <div className="text-[11px] text-slate-400">{hnd.employeeRole}</div>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="py-3 px-4 font-medium text-slate-800">
+                      {hnd.projectNames.join(', ')}
+                    </td>
+
+                    <td className="py-3 px-4">
+                      <span
+                        className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded border uppercase tabular-nums ${
+                          hnd.risk === 'critical'
+                            ? 'bg-rose-50 border-rose-300 text-rose-700'
+                            : hnd.risk === 'high'
+                            ? 'bg-amber-50 border-amber-300 text-amber-700'
+                            : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                        }`}
+                      >
+                        {hnd.risk}
+                      </span>
+                    </td>
+
+                    <td className="py-3 px-4 text-center font-mono font-bold tabular-nums">
+                      {hnd.progress}%
+                    </td>
+
+                    <td className="py-3 px-4">
+                      <span
+                        className={`font-mono text-[11px] font-medium px-2 py-0.5 rounded ${
+                          hnd.status === 'Email Sent'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {hnd.status}
+                      </span>
+                    </td>
+
+                    <td className="py-3 px-4 font-mono text-[11px] text-slate-500">
+                      {hnd.createdAt}
+                    </td>
+
+                    <td className="py-3 px-4 text-right">
+                      <span className="text-xs font-semibold text-indigo-600 group-hover:underline inline-flex items-center gap-1">
+                        <span>View Handover</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

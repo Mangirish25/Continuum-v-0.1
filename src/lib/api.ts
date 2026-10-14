@@ -124,6 +124,43 @@ export async function loginAdministrator(email: string, password: string) {
   return res;
 }
 
+// Administrator Profile
+export interface CurrentAdminProfile {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  supabase_user_id?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export async function getCurrentAdmin(): Promise<CurrentAdminProfile | null> {
+  try {
+    return await apiFetch<CurrentAdminProfile>('/auth/me');
+  } catch (err) {
+    // If auth session exists in Supabase, try to extract metadata
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const email = session.user.email || '';
+        const name = session.user.user_metadata?.full_name || session.user.user_metadata?.name || email.split('@')[0];
+        return {
+          id: session.user.id,
+          email,
+          name,
+          role: 'admin',
+          supabase_user_id: session.user.id,
+          created_at: session.user.created_at || new Date().toISOString(),
+        };
+      }
+    } catch {
+      // Ignore
+    }
+    return null;
+  }
+}
+
 // Knowledge Sources API Helpers
 export interface RegisteredSource {
   id: string;
@@ -170,4 +207,100 @@ export async function syncSource(sourceId: string) {
 
 export async function deleteSource(sourceId: string, hardDelete = false) {
   return apiFetch(`/sources/${sourceId}?hard_delete=${hardDelete}`, { method: 'DELETE' });
+}
+
+// Employees API Helpers
+export async function getEmployees(): Promise<any[]> {
+  return apiFetch<any[]>('/employees');
+}
+
+export async function createEmployee(payload: {
+  name: string;
+  email: string;
+  role: string;
+  team?: string;
+  status?: string;
+  skills?: string[];
+  project_ids?: string[];
+}): Promise<any> {
+  return apiFetch<any>('/employees', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteEmployee(employeeId: string): Promise<void> {
+  return apiFetch(`/employees/${employeeId}`, { method: 'DELETE' });
+}
+
+// Projects API Helpers
+export async function getProjects(): Promise<any[]> {
+  return apiFetch<any[]>('/projects');
+}
+
+export async function createProject(payload: {
+  name: string;
+  description?: string;
+  status?: string;
+  member_ids?: string[];
+}): Promise<any> {
+  return apiFetch<any>('/projects', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  return apiFetch(`/projects/${projectId}`, { method: 'DELETE' });
+}
+
+// Handovers API Helpers
+export async function getHandovers(): Promise<any[]> {
+  return apiFetch<any[]>('/handovers');
+}
+
+export async function createHandover(payload: {
+  employee_id: string;
+  project_id?: string;
+  recipient_email?: string;
+}): Promise<any> {
+  return apiFetch<any>('/handovers', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function sendHandover(handoverId: string, payload: { recipient_email?: string }): Promise<any> {
+  return apiFetch<any>(`/handovers/${handoverId}/send`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+// Dashboard and Risk API Helpers
+export async function getDashboardSummary(): Promise<any> {
+  return apiFetch<any>('/dashboard');
+}
+
+export async function getRiskOverview(): Promise<any> {
+  return apiFetch<any>('/risk/overview');
+}
+
+// Knowledge Search API Helpers
+export async function searchKnowledge(payload: {
+  query: string;
+  project_id?: string;
+  employee_id?: string;
+  provider?: string;
+  limit?: number;
+}): Promise<any> {
+  return apiFetch<any>('/knowledge/search', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+// Notifications API Helpers
+export async function getNotifications(): Promise<any[]> {
+  return apiFetch<any[]>('/notifications');
 }

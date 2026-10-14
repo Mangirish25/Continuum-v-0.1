@@ -39,20 +39,20 @@ export const ConnectResourceModal: React.FC<ConnectResourceModalProps> = ({
   const [projectId, setProjectId] = useState(projects[0]?.id || '');
 
   // GitHub fields
-  const [repoUrl, setRepoUrl] = useState('https://github.com/acme-technologies/payment-service');
+  const [repoUrl, setRepoUrl] = useState('');
 
   // Google Drive fields
   const [driveAuthorized, setDriveAuthorized] = useState(false);
-  const [selectedDriveFolder, setSelectedDriveFolder] = useState('Payment Project');
+  const [selectedDriveFolder, setSelectedDriveFolder] = useState('');
   const [isAuthorizingDrive, setIsAuthorizingDrive] = useState(false);
 
   // Notion fields
   const [notionAuthorized, setNotionAuthorized] = useState(false);
-  const [selectedNotionPage, setSelectedNotionPage] = useState('Payment Architecture');
+  const [selectedNotionPage, setSelectedNotionPage] = useState('');
   const [isAuthorizingNotion, setIsAuthorizingNotion] = useState(false);
 
   // Jira fields
-  const [jiraProjectCode, setJiraProjectCode] = useState('PAY — Payment Platform');
+  const [jiraProjectCode, setJiraProjectCode] = useState('');
   const [isSyncingJira, setIsSyncingJira] = useState(false);
 
   // API Submission States
@@ -380,7 +380,7 @@ export const ConnectResourceModal: React.FC<ConnectResourceModalProps> = ({
                   required
                   value={repoUrl}
                   onChange={(e) => setRepoUrl(e.target.value)}
-                  placeholder="https://github.com/acme-technologies/payment-service"
+                  placeholder="https://github.com/username/repository"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-900 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:bg-white"
                 />
               </div>
@@ -461,48 +461,16 @@ export const ConnectResourceModal: React.FC<ConnectResourceModalProps> = ({
 
                   <div>
                     <label className="block text-slate-700 font-semibold mb-1">
-                      Select or Enter Folder URL / ID:
+                      Enter Folder Name or URL:
                     </label>
-                    <div className="space-y-1.5 mb-2">
-                      {[
-                        'Payment Project',
-                        'Authentication',
-                        'Documentation',
-                        'Architecture RFCs',
-                      ].map((folderName) => (
-                        <label
-                          key={folderName}
-                          className={`flex items-center justify-between p-2.5 rounded border cursor-pointer text-xs transition-all ${
-                            selectedDriveFolder === folderName
-                              ? 'bg-indigo-50/60 border-indigo-400 font-semibold text-indigo-950'
-                              : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="radio"
-                              name="driveFolder"
-                              checked={selectedDriveFolder === folderName}
-                              onChange={() => setSelectedDriveFolder(folderName)}
-                              className="text-indigo-600 focus:ring-indigo-500"
-                            />
-                            <Folder className="w-4 h-4 text-amber-500" />
-                            <span>{folderName}</span>
-                          </div>
-                          <span className="text-[10px] font-mono text-slate-400">Preset Folder</span>
-                        </label>
-                      ))}
-                    </div>
-                    <div>
-                      <span className="text-[11px] font-medium text-slate-600 mb-1 block">Or enter custom Google Drive Folder URL or ID:</span>
-                      <input
-                        type="text"
-                        value={selectedDriveFolder}
-                        onChange={(e) => setSelectedDriveFolder(e.target.value)}
-                        placeholder="https://drive.google.com/drive/folders/folder_id or folder_name"
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-900 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:bg-white"
-                      />
-                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={selectedDriveFolder}
+                      onChange={(e) => setSelectedDriveFolder(e.target.value)}
+                      placeholder="e.g. Project Documentation"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:bg-white"
+                    />
                   </div>
 
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded text-[11px] text-slate-600 font-medium">
@@ -579,48 +547,20 @@ export const ConnectResourceModal: React.FC<ConnectResourceModalProps> = ({
 
                   <div>
                     <label className="block text-slate-700 font-semibold mb-1">
-                      Select or Enter Notion Page URL / ID:
+                      Enter Notion Page Name or URL:
                     </label>
-                    <div className="space-y-1.5 mb-2">
-                      {[
-                        'Payment Architecture',
-                        'Authentication Docs',
-                        'Backend Documentation',
-                        'API Contract Registry',
-                      ].map((pageName) => (
-                        <label
-                          key={pageName}
-                          className={`flex items-center justify-between p-2.5 rounded border cursor-pointer text-xs transition-all ${
-                            selectedNotionPage === pageName
-                              ? 'bg-indigo-50/60 border-indigo-400 font-semibold text-indigo-950'
-                              : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="radio"
-                              name="notionPage"
-                              checked={selectedNotionPage === pageName}
-                              onChange={() => setSelectedNotionPage(pageName)}
-                              className="text-indigo-600 focus:ring-indigo-500"
-                            />
-                            <FileText className="w-4 h-4 text-slate-700" />
-                            <span>{pageName}</span>
-                          </div>
-                          <span className="text-[10px] font-mono text-slate-400">Preset Page</span>
-                        </label>
-                      ))}
-                    </div>
-                    <div>
-                      <span className="text-[11px] font-medium text-slate-600 mb-1 block">Or enter custom Notion Page URL or Page ID:</span>
-                      <input
-                        type="text"
-                        value={selectedNotionPage}
-                        onChange={(e) => setSelectedNotionPage(e.target.value)}
-                        placeholder="https://notion.so/myorg/page-title or page_id"
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-900 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:bg-white"
-                      />
-                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={selectedNotionPage}
+                      onChange={(e) => setSelectedNotionPage(e.target.value)}
+                      placeholder="e.g. Project Architecture"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:bg-white"
+                    />
+                  </div>
+
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded text-[11px] text-slate-600 font-medium">
+                    ⚠️ <strong>Notice:</strong> Only this selected page and its sub-pages will be indexed.
                   </div>
 
                   <div className="pt-2 flex items-center justify-end gap-2">
@@ -681,7 +621,7 @@ export const ConnectResourceModal: React.FC<ConnectResourceModalProps> = ({
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-500 font-medium">Workspace:</span>
-                  <span className="font-semibold text-slate-800">Acme Technologies (Atlassian)</span>
+                  <span className="font-semibold text-slate-800">Company Jira Workspace</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-500 font-medium">Mapped Resource Target:</span>

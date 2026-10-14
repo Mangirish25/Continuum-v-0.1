@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ConnectedResource, ConnectionProvider, SourceType } from '../../types';
-import { CONNECTION_PROVIDERS } from '../../data/mockData';
+import { ConnectedResource, SourceType } from '../../types';
 import { getSources, syncSource, deleteSource, RegisteredSource } from '../../lib/api';
 import {
   Network,
@@ -38,6 +37,34 @@ export const ConnectionsScreen: React.FC<ConnectionsScreenProps> = ({
   const [syncingSourceId, setSyncingSourceId] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
+
+  // Define provider types dynamically
+  const providerTypes: { type: SourceType; name: string; description: string; scopeNotice: string }[] = [
+    {
+      type: 'github',
+      name: 'GitHub',
+      description: 'Connect selected public repositories to employees to track commit histories, pull requests, and code ownership.',
+      scopeNotice: 'Only public repositories connected to employees are accessed. No private GitHub account access required.',
+    },
+    {
+      type: 'googledrive',
+      name: 'Google Drive',
+      description: 'Employees authorize OAuth access, and the admin connects exactly one specific folder for synchronization.',
+      scopeNotice: 'Continuum only synchronizes the single folder selected by the administrator. Entire Drive is never accessed.',
+    },
+    {
+      type: 'notion',
+      name: 'Notion',
+      description: 'Employees authorize access to a selected Notion page or documentation workspace for knowledge indexing.',
+      scopeNotice: 'Only selected documentation pages and child sub-pages are indexed.',
+    },
+    {
+      type: 'jira',
+      name: 'Jira',
+      description: 'Company-level connection linking your Jira workspace to automatically map tasks to employees.',
+      scopeNotice: 'Connected at company level. Employees do not separately authorize Jira.',
+    },
+  ];
 
   const loadSources = async () => {
     setLoadingSources(true);
@@ -163,7 +190,7 @@ export const ConnectionsScreen: React.FC<ConnectionsScreenProps> = ({
 
   // If a provider is selected for detail view (Section 24)
   const activeDetailProvider = selectedProviderType
-    ? CONNECTION_PROVIDERS.find((p) => p.type === selectedProviderType)
+    ? providerTypes.find((p) => p.type === selectedProviderType)
     : null;
 
   const providerResources = selectedProviderType
@@ -194,8 +221,23 @@ export const ConnectionsScreen: React.FC<ConnectionsScreenProps> = ({
 
       {/* 4 Cards Overview (Section 23) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {CONNECTION_PROVIDERS.map((provider) => {
+        {providerTypes.map((provider) => {
           const isSelected = selectedProviderType === provider.type;
+          const matching = [...dbSources.map(s => ({ sourceType: s.source_type, lastSynced: s.last_synced_at })), ...connectedResources].filter(s => {
+            const st = (s.sourceType || '').toLowerCase();
+            if (provider.type === 'googledrive') return st === 'googledrive' || st === 'google_drive';
+            return st === provider.type;
+          });
+          const count = matching.length;
+          const isConnected = count > 0;
+          let countLabel = '';
+          if (provider.type === 'github') countLabel = `${count} ${count === 1 ? 'Repository' : 'Repositories'} Connected`;
+          else if (provider.type === 'googledrive') countLabel = `${count} ${count === 1 ? 'Folder' : 'Folders'} Connected`;
+          else if (provider.type === 'notion') countLabel = `${count} ${count === 1 ? 'Page' : 'Pages'} Connected`;
+          else if (provider.type === 'jira') countLabel = `${count} ${count === 1 ? 'Workspace' : 'Workspaces'} Connected`;
+
+          const lastSync = matching[0]?.lastSynced ? new Date(matching[0].lastSynced).toLocaleDateString() : 'Never synced';
+
           return (
             <div
               key={provider.type}
@@ -211,9 +253,19 @@ export const ConnectionsScreen: React.FC<ConnectionsScreenProps> = ({
                     </div>
                     <div>
                       <h3 className="font-bold text-sm text-slate-900">{provider.name}</h3>
-                      <span className="inline-flex items-center gap-1 font-mono text-[10px] text-emerald-700 bg-emerald-50 px-1.5 rounded border border-emerald-200 font-semibold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        🟢 Connected
+                      <span
+                        className={`inline-flex items-center gap-1 font-mono text-[10px] px-1.5 rounded border font-semibold ${
+                          isConnected
+                            ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                            : 'text-slate-500 bg-slate-100 border-slate-200'
+                        }`}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            isConnected ? 'bg-emerald-500' : 'bg-slate-400'
+                          }`}
+                        />
+                        {isConnected ? 'Connected' : 'Not Connected'}
                       </span>
                     </div>
                   </div>
@@ -221,10 +273,10 @@ export const ConnectionsScreen: React.FC<ConnectionsScreenProps> = ({
 
                 <div className="text-xs space-y-1">
                   <div className="font-semibold text-slate-800">
-                    {provider.connectedCountLabel}
+                    {countLabel}
                   </div>
                   <div className="text-[11px] font-mono text-slate-400">
-                    Last sync: {provider.lastSync}
+                    Last sync: {lastSync}
                   </div>
                 </div>
 
@@ -276,12 +328,22 @@ export const ConnectionsScreen: React.FC<ConnectionsScreenProps> = ({
                   <h2 className="text-base font-bold text-slate-900">
                     {activeDetailProvider.name} Integration
                   </h2>
-                  <span className="font-mono text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-semibold">
-                    🟢 Connected
-                  </span>
+                  {providerResources.length > 0 || dbSources.some(s => {
+                    const st = (s.source_type || '').toLowerCase();
+                    if (activeDetailProvider.type === 'googledrive') return st === 'googledrive' || st === 'google_drive';
+                    return st === activeDetailProvider.type;
+                  }) ? (
+                    <span className="font-mono text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-semibold">
+                      🟢 Connected
+                    </span>
+                  ) : (
+                    <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 font-semibold">
+                      ⚪ Not Connected
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Last synchronization: {activeDetailProvider.lastSync}
+                  Last synchronization: {providerResources[0]?.lastSynced || 'Never synced'}
                 </p>
               </div>
             </div>
@@ -524,6 +586,23 @@ export const ConnectionsScreen: React.FC<ConnectionsScreenProps> = ({
                   </div>
                 </div>
               ))}
+          </div>
+        ) : connectedResources.length === 0 ? (
+          <div className="p-12 text-center space-y-3 border border-slate-200 rounded-lg bg-slate-50/50">
+            <Network className="w-10 h-10 text-slate-300 mx-auto" />
+            <div className="text-sm font-semibold text-slate-800">No Knowledge Sources Connected</div>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
+              No knowledge connectors are currently active. Connect a GitHub repository, Google Drive folder, Notion workspace, or Jira board to begin indexing continuity.
+            </p>
+            <div className="pt-2">
+              <button
+                onClick={onOpenConnectResource}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#3525cd] hover:bg-[#2b1ea8] rounded transition-colors shadow-xs cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Connect First Resource</span>
+              </button>
+            </div>
           </div>
         ) : (
           <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden">
