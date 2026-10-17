@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: continuum_postgres
+    environment:
+      POSTGRES_DB: continuum_db
+      POSTGRES_USER: continuum
+      POSTGRES_PASSWORD: continuum_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U continuum -d continuum_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: continuum_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  chromadb:
+    image: chromadb/chroma:0.4.24
+    container_name: continuum_chroma
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: continuum_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: continuum_backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://continuum:continuum_password@postgres:5432/continuum_db
+      - SYNC_DATABASE_URL=postgresql+psycopg2://continuum:continuum_password@postgres:5432/continuum_db
+      - REDIS_URL=redis://redis:6379/0
+      - CHROMA_URL=http://chromadb:8000
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: continuum_worker
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    healthcheck:
+      disable: true
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://continuum:continuum_password@postgres:5432/continuum_db
+      - SYNC_DATABASE_URL=postgresql+psycopg2://continuum:continuum_password@postgres:5432/continuum_db
+      - REDIS_URL=redis://redis:6379/0
+      - CHROMA_URL=http://chromadb:8000
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      - backend
+      - redis
+
+volumes:
+  postgres_data:
+  chroma_data:
+  ollama_data:

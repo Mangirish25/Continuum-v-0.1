@@ -1,0 +1,6 @@
+{
+  "name": "Continuum — Knowledge Continuity Platform",
+  "description": "Enterprise institutional knowledge continuity, succession risk telemetry, semantic organizational memory, and system ownership management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
