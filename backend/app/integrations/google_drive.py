@@ -50,31 +50,32 @@ class GoogleDriveConnector(BaseConnector):
         documents: List[NormalizedDocument] = []
         folder_id = external_resource_id
 
-        if not self.access_token or folder_id.startswith("folder_gdrive_"):
+        if not self.access_token or folder_id.startswith("folder_gdrive_") or "mock" in str(self.access_token).lower():
             # Return realistic normalized documents for selected mock folder
+            emp_name = kwargs.get("employee_name") or "Rahul Sharma"
             mock_docs = [
                 NormalizedDocument(
                     external_id=f"gdrive:{folder_id}:doc1",
                     title="Payment Gateway Architecture & Failover Strategy",
-                    content="The Payment Gateway integrates Stripe and Adyen with automated failover logic. Key retry mechanisms are managed via exponential backoff. System lead maintainer: Rahul Sharma.",
+                    content=f"The Payment Gateway integrates Stripe and Adyen with automated failover logic. Key retry mechanisms are managed via exponential backoff. System lead maintainer: {emp_name}. Primary knowledge owner for payment service resilience.",
                     provider="GOOGLE_DRIVE",
                     source_url=f"https://drive.google.com/file/d/{folder_id}_doc1",
                     employee_id=employee_id,
                     project_id=project_id,
-                    doc_metadata={"folder_id": folder_id, "file_type": "gdoc", "knowledge_type": "architecture"}
+                    doc_metadata={"folder_id": folder_id, "file_type": "gdoc", "knowledge_type": "architecture", "contributor": emp_name, "employee_name": emp_name}
                 ),
                 NormalizedDocument(
                     external_id=f"gdrive:{folder_id}:doc2",
                     title="Database Sharding & Data Continuity Handbook",
-                    content="Database migration patterns, connection pooling setup, and snapshot recovery rules. Crucial environment variables must be rotated using AWS Secrets Manager.",
+                    content=f"Database migration patterns, connection pooling setup, and snapshot recovery rules. Document authored by {emp_name}. Crucial environment variables must be rotated using AWS Secrets Manager.",
                     provider="GOOGLE_DRIVE",
                     source_url=f"https://drive.google.com/file/d/{folder_id}_doc2",
                     employee_id=employee_id,
                     project_id=project_id,
-                    doc_metadata={"folder_id": folder_id, "file_type": "gdoc", "knowledge_type": "database"}
+                    doc_metadata={"folder_id": folder_id, "file_type": "gdoc", "knowledge_type": "database", "contributor": emp_name, "employee_name": emp_name}
                 )
             ]
-            logger.info(f"Fetched {len(mock_docs)} documents from Google Drive folder '{folder_id}'")
+            logger.info(f"Fetched {len(mock_docs)} documents from Google Drive folder '{folder_id}' for employee '{emp_name}'")
             return mock_docs
 
         async with httpx.AsyncClient() as client:

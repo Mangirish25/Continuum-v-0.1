@@ -1,17 +1,21 @@
 import React, { useState, useMemo } from 'react';
 import { Employee, RiskLevel } from '../../types';
-import { Users, Search, Plus, Filter, ArrowRight, ShieldAlert } from 'lucide-react';
+import { Users, Search, Plus, Filter, ArrowRight, ShieldAlert, Pencil, Trash2 } from 'lucide-react';
 
 interface EmployeesScreenProps {
   employees: Employee[];
   onSelectEmployee: (emp: Employee) => void;
   onOpenAddEmployee: () => void;
+  onEditEmployee: (emp: Employee) => void;
+  onDeleteEmployee: (emp: Employee) => void;
 }
 
 export const EmployeesScreen: React.FC<EmployeesScreenProps> = ({
   employees,
   onSelectEmployee,
   onOpenAddEmployee,
+  onEditEmployee,
+  onDeleteEmployee,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [teamFilter, setTeamFilter] = useState('all');
@@ -243,10 +247,28 @@ export const EmployeesScreen: React.FC<EmployeesScreenProps> = ({
 
                     {/* Actions */}
                     <td className="py-3 px-4 text-right">
-                      <span className="text-xs font-semibold text-indigo-600 group-hover:underline inline-flex items-center gap-1">
-                        <span>View Profile</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </span>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onEditEmployee(emp); }}
+                          title="Edit employee"
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); onDeleteEmployee(emp); }}
+                          title="Delete employee"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="text-xs font-semibold text-indigo-600 group-hover:underline inline-flex items-center gap-1">
+                          <span>View</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 ))}

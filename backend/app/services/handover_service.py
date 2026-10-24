@@ -4,12 +4,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.db.models.all_models import Handover, Employee, Project, KnowledgeDocument, EmployeeResource
-from app.schemas.handover import HandoverCreate, HandoverOut, HandoverSendRequest
+from app.db.models.all_models import Handover, Employee, Project, KnowledgeDocument, EmployeeResource, HandoverAuditLog, Admin
+from app.schemas.handover import HandoverCreate, HandoverOut, HandoverSendRequest, HandoverReverseRequest
 from app.ai.handover_generator import handover_generator
 from app.services.email_service import email_service
-from app.core.exceptions import NotFoundException, BadRequestException
+from app.core.exceptions import NotFoundException, BadRequestException, ConflictException
 from app.core.logging import logger
+
+# Statuses that can be legally reversed
+REVERSIBLE_STATUSES = {"READY_FOR_REVIEW", "SENT"}
+
 
 class HandoverService:
     async def generate_handover(
@@ -102,9 +106,12 @@ class HandoverService:
         if not h:
             raise NotFoundException(f"Handover {handover_id} not found.")
 
-        emp_info = {"id": h.employee.id, "name": h.employee.name, "email": h.employee.email, "role": h.employee.role} if h.employee else None
-        proj_info = {"id": h.project.id, "name": h.project.name} if h.project else None
-        succ_info = {"id": h.recommended_successor.id, "name": h.recommended_successor.name, "email": h.recommended_successor.email, "role": h.recommended_successor.role} if h.recommended_successor else None
+        succ_info = {
+            "id": h.recommended_successor.id,
+            "name": h.recommended_successor.name,
+            "email": h.recommended_successor.email,
+            "role": h.recommended_successor.role,
+        } if h.recommended_successor else None
 
         return HandoverOut(
             id=h.id,
@@ -121,6 +128,8 @@ class HandoverService:
             risk_summary=h.risk_summary or {},
             recipient_email=h.recipient_email,
             sent_at=h.sent_at,
+            reversed_at=h.reversed_at,
+            reversal_reason=h.reversal_reason,
             created_at=h.created_at,
             updated_at=h.updated_at
         )
@@ -169,5 +178,93 @@ class HandoverService:
 
         logger.info(f"Handover {h.id} status updated to SENT")
         return await self.get_handover_detail(h.id, db)
+
+    async def reverse_handover(
+        self,
+        handover_id: str,
+        data: HandoverReverseRequest,
+        admin: Admin,
+        db: AsyncSession,
+    ) -> HandoverOut:
+        """
+        Reverse (take back) a previously generated or sent handover.
+
+        Business rules:
+        - The handover must exist.
+        - Only READY_FOR_REVIEW or SENT handovers may be reversed.
+        - An already-REVERSED handover is rejected (idempotency guard).
+        - The reversal reason must be non-empty (enforced by Pydantic schema).
+        - All changes are committed in a single transaction together with the
+          immutable audit log entry so they stay consistent.
+        """
+        # Use SELECT ... FOR UPDATE on PostgreSQL to prevent concurrent reversal attempts.
+        # SQLite (used in tests) silently ignores FOR UPDATE, which is acceptable since
+        # SQLite serialises writes at the connection level anyway.
+        stmt = (
+            select(Handover)
+            .where(Handover.id == handover_id)
+            .options(
+                selectinload(Handover.employee),
+                selectinload(Handover.project),
+            )
+            .with_for_update()
+        )
+        h = (await db.execute(stmt)).scalar_one_or_none()
+
+        if not h:
+            raise NotFoundException(f"Handover '{handover_id}' not found.")
+
+        if h.status == "REVERSED":
+            raise ConflictException(
+                f"Handover '{handover_id}' has already been reversed and cannot be reversed again."
+            )
+
+        if h.status not in REVERSIBLE_STATUSES:
+            raise BadRequestException(
+                f"Handover cannot be reversed from status '{h.status}'. "
+                f"Only {sorted(REVERSIBLE_STATUSES)} handovers may be taken back."
+            )
+
+        reason = data.reason.strip()
+        if not reason:
+            raise BadRequestException("A non-empty reversal reason is required.")
+
+        previous_status = h.status
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        # Apply reversal
+        h.status = "REVERSED"
+        h.reversed_at = now
+        h.reversal_reason = reason
+
+        # Write immutable audit entry
+        audit = HandoverAuditLog(
+            handover_id=h.id,
+            admin_id=admin.id,
+            action="REVERSED",
+            previous_status=previous_status,
+            new_status="REVERSED",
+            reason=reason,
+            audit_metadata={
+                "reversed_by_email": admin.email,
+                "reversed_by_name": admin.name,
+                "employee_id": h.employee_id,
+                "employee_name": h.employee.name if h.employee else None,
+                "project_id": h.project_id,
+                "project_name": h.project.name if h.project else None,
+            },
+        )
+        db.add(audit)
+
+        # Commit both atomically
+        await db.commit()
+
+        logger.info(
+            f"Handover {h.id} reversed by admin {admin.email} "
+            f"(previous status: {previous_status}). Reason: {reason}"
+        )
+
+        return await self.get_handover_detail(h.id, db)
+
 
 handover_service = HandoverService()

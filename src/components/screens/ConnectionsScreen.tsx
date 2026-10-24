@@ -1,6 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { ConnectedResource, SourceType } from '../../types';
-import { getSources, syncSource, deleteSource, RegisteredSource } from '../../lib/api';
+import {
+  getSources,
+  syncSource,
+  deleteSource,
+  RegisteredSource,
+  getJiraWorkspaceStatus,
+  configureJiraWorkspace,
+  verifyJiraWorkspace,
+  disconnectJiraWorkspace,
+  JiraWorkspaceStatusData,
+} from '../../lib/api';
 import {
   Network,
   FolderGit2,
@@ -17,6 +27,10 @@ import {
   ExternalLink,
   Clock,
   Database,
+  Settings,
+  Key,
+  X,
+  Check,
 } from 'lucide-react';
 
 interface ConnectionsScreenProps {
@@ -37,6 +51,17 @@ export const ConnectionsScreen: React.FC<ConnectionsScreenProps> = ({
   const [syncingSourceId, setSyncingSourceId] = useState<string | null>(null);
   const [sourceFilter, setSourceFilter] = useState<string>('all');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
+
+  // Jira Centralized Workspace States
+  const [jiraStatus, setJiraStatus] = useState<JiraWorkspaceStatusData | null>(null);
+  const [loadingJiraStatus, setLoadingJiraStatus] = useState(false);
+  const [isConfigureJiraOpen, setIsConfigureJiraOpen] = useState(false);
+  const [jiraUrlInput, setJiraUrlInput] = useState('');
+  const [jiraEmailInput, setJiraEmailInput] = useState('');
+  const [jiraTokenInput, setJiraTokenInput] = useState('');
+  const [isSavingJira, setIsSavingJira] = useState(false);
+  const [jiraConfigError, setJiraConfigError] = useState<string | null>(null);
+  const [isVerifyingJira, setIsVerifyingJira] = useState(false);
 
   // Define provider types dynamically
   const providerTypes: { type: SourceType; name: string; description: string; scopeNotice: string }[] = [
@@ -80,9 +105,79 @@ export const ConnectionsScreen: React.FC<ConnectionsScreenProps> = ({
     }
   };
 
+  const loadJiraStatus = async () => {
+    setLoadingJiraStatus(true);
+    try {
+      const data = await getJiraWorkspaceStatus();
+      setJiraStatus(data);
+      if (data?.workspace_url) {
+        setJiraUrlInput(data.workspace_url);
+      }
+      if (data?.admin_email) {
+        setJiraEmailInput(data.admin_email);
+      }
+    } catch {
+      // Backend offline or not configured
+    } finally {
+      setLoadingJiraStatus(false);
+    }
+  };
+
   useEffect(() => {
     loadSources();
+    loadJiraStatus();
   }, []);
+
+  const handleVerifyJira = async () => {
+    setIsVerifyingJira(true);
+    setStatusNotice(null);
+    try {
+      const res = await verifyJiraWorkspace();
+      setStatusNotice(res.message);
+      await loadJiraStatus();
+    } catch (err: any) {
+      setStatusNotice(`Jira verification error: ${err.message}`);
+    } finally {
+      setIsVerifyingJira(false);
+    }
+  };
+
+  const handleSaveJiraConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingJira(true);
+    setJiraConfigError(null);
+    try {
+      const data = await configureJiraWorkspace({
+        workspace_url: jiraUrlInput,
+        admin_email: jiraEmailInput || undefined,
+        api_token: jiraTokenInput,
+      });
+      setJiraStatus(data);
+      setIsConfigureJiraOpen(false);
+      setJiraTokenInput('');
+      setStatusNotice('Centralized Jira workspace successfully configured and verified!');
+      await loadSources();
+      await loadJiraStatus();
+    } catch (err: any) {
+      setJiraConfigError(err.message || 'Failed to configure Jira workspace.');
+    } finally {
+      setIsSavingJira(false);
+    }
+  };
+
+  const handleDisconnectJira = async () => {
+    if (!confirm('Are you sure you want to disconnect the centralized Jira workspace? Existing mapped resources will be preserved with attribution.')) {
+      return;
+    }
+    try {
+      await disconnectJiraWorkspace();
+      setStatusNotice('Jira workspace disconnected.');
+      await loadJiraStatus();
+      await loadSources();
+    } catch (err: any) {
+      setStatusNotice(`Failed to disconnect: ${err.message}`);
+    }
+  };
 
   const handleSyncSource = async (sourceId: string) => {
     setSyncingSourceId(sourceId);
@@ -318,113 +413,318 @@ export const ConnectionsScreen: React.FC<ConnectionsScreenProps> = ({
       {/* Connection Detail (Section 24) */}
       {activeDetailProvider && (
         <div className="bg-white border border-slate-200 rounded-lg p-6 space-y-5 shadow-xs animate-in fade-in duration-150">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded">
-                {getProviderIcon(activeDetailProvider.type)}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-bold text-slate-900">
-                    {activeDetailProvider.name} Integration
-                  </h2>
-                  {providerResources.length > 0 || dbSources.some(s => {
-                    const st = (s.source_type || '').toLowerCase();
-                    if (activeDetailProvider.type === 'googledrive') return st === 'googledrive' || st === 'google_drive';
-                    return st === activeDetailProvider.type;
-                  }) ? (
-                    <span className="font-mono text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-semibold">
-                      🟢 Connected
-                    </span>
-                  ) : (
-                    <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 font-semibold">
-                      ⚪ Not Connected
-                    </span>
+          {activeDetailProvider.type === 'jira' ? (
+            /* =======================================================
+               ADMINISTRATOR-MANAGED CENTRAL JIRA WORKSPACE UI
+               ======================================================= */
+            <div className="space-y-5">
+              {/* Jira Top Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-blue-50 border border-blue-200 rounded">
+                    <Layers className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-bold text-slate-900">
+                        Company Jira Workspace (Centralized)
+                      </h2>
+                      {jiraStatus?.connected ? (
+                        <span className="font-mono text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-semibold inline-flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>Connected & Verified</span>
+                        </span>
+                      ) : (
+                        <span className="font-mono text-xs text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-semibold inline-flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-amber-600" />
+                          <span>Not Configured</span>
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Managed centrally by Continuum Administrator. Employees do not need individual Jira credentials.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {jiraStatus?.connected && (
+                    <button
+                      onClick={handleVerifyJira}
+                      disabled={isVerifyingJira}
+                      className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                      title="Test Jira connection"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isVerifyingJira ? 'animate-spin text-blue-600' : ''}`} />
+                      <span>{isVerifyingJira ? 'Testing...' : 'Test Connection'}</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setJiraConfigError(null);
+                      setIsConfigureJiraOpen(true);
+                    }}
+                    className="px-3 py-1.5 text-xs font-semibold text-white bg-[#3525cd] hover:bg-[#2b1ea8] rounded transition-colors shadow-2xs inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>{jiraStatus?.connected ? 'Update Credentials' : 'Configure Jira'}</span>
+                  </button>
+
+                  {jiraStatus?.connected && (
+                    <button
+                      onClick={handleDisconnectJira}
+                      className="px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded transition-colors cursor-pointer"
+                      title="Safely disconnect centralized Jira workspace"
+                    >
+                      Disconnect
+                    </button>
                   )}
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Last synchronization: {providerResources[0]?.lastSynced || 'Never synced'}
-                </p>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleSyncProvider(activeDetailProvider.name)}
-                disabled={syncingProvider === activeDetailProvider.name}
-                className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded transition-colors inline-flex items-center gap-1.5 shadow-2xs"
-              >
-                <RefreshCw
-                  className={`w-3.5 h-3.5 ${
-                    syncingProvider === activeDetailProvider.name ? 'animate-spin' : ''
-                  }`}
-                />
-                <span>Sync Now</span>
-              </button>
-
-              <button
-                onClick={onOpenConnectResource}
-                className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded transition-colors shadow-2xs"
-              >
-                + Link Resource
-              </button>
-            </div>
-          </div>
-
-          {/* Scope notice */}
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded text-xs text-slate-600 flex items-start gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-            <div>
-              <div className="font-semibold text-slate-800">Resource Scope Guarantee:</div>
-              <div className="text-[11px] text-slate-500 mt-0.5">
-                {activeDetailProvider.scopeNotice}
-              </div>
-            </div>
-          </div>
-
-          {/* Connected resources mapped by employee (Section 24 tree view) */}
-          <div className="space-y-3">
-            <h3 className="font-bold text-xs uppercase tracking-wider text-slate-900 font-mono">
-              Connected Resources ({providerResources.length})
-            </h3>
-
-            {providerResources.length > 0 ? (
-              <div className="space-y-2">
-                {providerResources.map((res) => (
-                  <div
-                    key={res.id}
-                    className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-lg flex items-center justify-between gap-3 text-xs"
-                  >
-                    <div>
-                      <div className="font-bold text-slate-900">{res.employeeName}</div>
-                      <div className="text-[11px] text-slate-600 font-mono flex items-center gap-1.5 mt-0.5">
-                        <span className="text-slate-400">&boxur;</span>
-                        <span className="font-semibold text-indigo-700">{res.name}</span>
-                        {res.projectName && (
-                          <span className="text-slate-400">({res.projectName})</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 font-mono text-[11px] text-slate-400">
-                      <span>Synced: {res.lastSynced}</span>
-                      <button
-                        onClick={() => onDisconnectResource(res.id)}
-                        className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
-                        title="Disconnect"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+              {/* Jira Workspace Info Card */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-4 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                <div>
+                  <div className="text-[11px] font-mono text-slate-500 uppercase">Workspace Identity</div>
+                  <div className="font-bold text-slate-900 mt-0.5 font-mono">
+                    {jiraStatus?.workspace_url || 'https://continuum.atlassian.net'}
                   </div>
-                ))}
+                </div>
+                <div>
+                  <div className="text-[11px] font-mono text-slate-500 uppercase">Admin Account</div>
+                  <div className="font-semibold text-slate-800 mt-0.5">
+                    {jiraStatus?.admin_email || 'Central Admin Configuration'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-mono text-slate-500 uppercase">Mapped Resources</div>
+                  <div className="font-semibold text-indigo-700 mt-0.5">
+                    {jiraStatus?.resources_count || 0} Jira Project Sources Tracked
+                  </div>
+                </div>
               </div>
-            ) : (
-              <div className="p-6 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded">
-                No resources currently linked for {activeDetailProvider.name}.
+
+              {/* Security Scope Notice */}
+              <div className="p-3 bg-blue-50/60 border border-blue-200 rounded text-xs text-blue-900 flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-blue-950">Security & Credential Guarantee:</div>
+                  <div className="text-[11px] text-blue-800 mt-0.5 leading-relaxed">
+                    All Jira credentials and API tokens are encrypted with AES/Fernet encryption and strictly stored server-side.
+                    Credentials are never exposed to browser storage or client scripts. Individual employees do not configure Jira connections.
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
+
+              {/* Available Jira Projects in Workspace */}
+              {jiraStatus?.available_projects && jiraStatus.available_projects.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-xs uppercase tracking-wider text-slate-900 font-mono">
+                      Available Workspace Projects ({jiraStatus.available_projects.length})
+                    </h3>
+                    <span className="text-[11px] text-slate-500 font-mono">
+                      Click "+ Map to Employee" to associate tasks with knowledge attribution
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {jiraStatus.available_projects.map((jp) => (
+                      <div
+                        key={jp.id || jp.key}
+                        className="p-3 bg-white border border-slate-200 rounded-lg flex items-center justify-between gap-2 shadow-2xs"
+                      >
+                        <div>
+                          <div className="font-bold text-xs text-slate-900">{jp.name}</div>
+                          <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                            Key: {jp.key}
+                          </span>
+                        </div>
+                        <button
+                          onClick={onOpenConnectResource}
+                          className="px-2 py-1 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded cursor-pointer transition-colors"
+                          title="Map project to an employee"
+                        >
+                          + Map
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Mapped Resources Attributed to Employees */}
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-xs uppercase tracking-wider text-slate-900 font-mono">
+                    Employee Attributed Jira Resources ({providerResources.length})
+                  </h3>
+                  <button
+                    onClick={onOpenConnectResource}
+                    className="px-3 py-1 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded transition-colors shadow-2xs cursor-pointer"
+                  >
+                    + Map Jira Resource
+                  </button>
+                </div>
+
+                {providerResources.length > 0 ? (
+                  <div className="space-y-2">
+                    {providerResources.map((res) => (
+                      <div
+                        key={res.id}
+                        className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-lg flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div>
+                          <div className="font-bold text-slate-900 flex items-center gap-2">
+                            <span>{res.employeeName}</span>
+                            <span className="font-mono text-[10px] text-blue-700 bg-blue-50 px-1.5 rounded border border-blue-200">
+                              Attributed Contributor
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-600 font-mono flex items-center gap-1.5 mt-0.5">
+                            <span className="text-slate-400">&boxur;</span>
+                            <span className="font-semibold text-indigo-700">{res.name}</span>
+                            {res.projectName && (
+                              <span className="text-slate-400">({res.projectName})</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 font-mono text-[11px] text-slate-400">
+                          <span>Synced: {res.lastSynced}</span>
+                          <button
+                            onClick={() => onDisconnectResource(res.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                            title="Disconnect mapping"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-6 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded">
+                    No Jira project resources are currently mapped to employees. Click "+ Map Jira Resource" to associate workspace projects with contributors.
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* =======================================================
+               STANDARD VIEW FOR GITHUB, GOOGLE DRIVE, NOTION
+               ======================================================= */
+            <>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded">
+                    {getProviderIcon(activeDetailProvider.type)}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-bold text-slate-900">
+                        {activeDetailProvider.name} Integration
+                      </h2>
+                      {providerResources.length > 0 || dbSources.some(s => {
+                        const st = (s.source_type || '').toLowerCase();
+                        if (activeDetailProvider.type === 'googledrive') return st === 'googledrive' || st === 'google_drive';
+                        return st === activeDetailProvider.type;
+                      }) ? (
+                        <span className="font-mono text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-semibold">
+                          🟢 Connected
+                        </span>
+                      ) : (
+                        <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 font-semibold">
+                          ⚪ Not Connected
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Last synchronization: {providerResources[0]?.lastSynced || 'Never synced'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleSyncProvider(activeDetailProvider.name)}
+                    disabled={syncingProvider === activeDetailProvider.name}
+                    className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded transition-colors inline-flex items-center gap-1.5 shadow-2xs"
+                  >
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${
+                        syncingProvider === activeDetailProvider.name ? 'animate-spin' : ''
+                      }`}
+                    />
+                    <span>Sync Now</span>
+                  </button>
+
+                  <button
+                    onClick={onOpenConnectResource}
+                    className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded transition-colors shadow-2xs"
+                  >
+                    + Link Resource
+                  </button>
+                </div>
+              </div>
+
+              {/* Scope notice */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded text-xs text-slate-600 flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-semibold text-slate-800">Resource Scope Guarantee:</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    {activeDetailProvider.scopeNotice}
+                  </div>
+                </div>
+              </div>
+
+              {/* Connected resources mapped by employee (Section 24 tree view) */}
+              <div className="space-y-3">
+                <h3 className="font-bold text-xs uppercase tracking-wider text-slate-900 font-mono">
+                  Connected Resources ({providerResources.length})
+                </h3>
+
+                {providerResources.length > 0 ? (
+                  <div className="space-y-2">
+                    {providerResources.map((res) => (
+                      <div
+                        key={res.id}
+                        className="p-3.5 bg-slate-50/70 border border-slate-200 rounded-lg flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div>
+                          <div className="font-bold text-slate-900">{res.employeeName}</div>
+                          <div className="text-[11px] text-slate-600 font-mono flex items-center gap-1.5 mt-0.5">
+                            <span className="text-slate-400">&boxur;</span>
+                            <span className="font-semibold text-indigo-700">{res.name}</span>
+                            {res.projectName && (
+                              <span className="text-slate-400">({res.projectName})</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 font-mono text-[11px] text-slate-400">
+                          <span>Synced: {res.lastSynced}</span>
+                          <button
+                            onClick={() => onDisconnectResource(res.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                            title="Disconnect"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-6 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded">
+                    No resources currently linked for {activeDetailProvider.name}.
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -665,6 +965,122 @@ export const ConnectionsScreen: React.FC<ConnectionsScreenProps> = ({
           </div>
         )}
       </div>
+
+      {/* Configure Jira Modal */}
+      {isConfigureJiraOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-blue-50 border border-blue-200 rounded">
+                  <Layers className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    Configure Company Jira Workspace
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Centrally managed Atlassian Jira credentials
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsConfigureJiraOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveJiraConfig} className="p-6 space-y-4">
+              {jiraConfigError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded text-xs text-rose-700 flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-semibold">Configuration Error</div>
+                    <div>{jiraConfigError}</div>
+                  </div>
+                </div>
+              )}
+
+              <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-lg text-xs text-slate-600 flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong>Admin Security:</strong> Jira API credentials are encrypted with AES-256 (Fernet) in the database. Employees do not configure or see these credentials.
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Jira Workspace URL <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="url"
+                  required
+                  placeholder="https://continuum.atlassian.net"
+                  value={jiraUrlInput}
+                  onChange={(e) => setJiraUrlInput(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded focus:outline-none focus:border-indigo-500 font-mono"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  The base URL of your Atlassian Cloud or Jira Server instance.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Administrator Email / Account
+                </label>
+                <input
+                  type="email"
+                  placeholder="admin@continuum.internal"
+                  value={jiraEmailInput}
+                  onChange={(e) => setJiraEmailInput(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded focus:outline-none focus:border-indigo-500"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Required for Atlassian Cloud Basic Auth with API token.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  API Token / PAT <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••••••••••••••••••••••"
+                  value={jiraTokenInput}
+                  onChange={(e) => setJiraTokenInput(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded focus:outline-none focus:border-indigo-500 font-mono"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Generated from Atlassian Account Settings &gt; Security &gt; Create API token.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsConfigureJiraOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingJira || !jiraUrlInput.trim() || !jiraTokenInput.trim()}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-[#3525cd] hover:bg-[#2b1ea8] rounded transition-colors shadow-xs cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  {isSavingJira && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isSavingJira ? 'Saving & Verifying...' : 'Save & Verify Workspace'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

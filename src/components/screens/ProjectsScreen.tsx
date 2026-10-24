@@ -15,6 +15,8 @@ import {
   Clock,
   ArrowRightLeft,
   Plus,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 
 interface ProjectsScreenProps {
@@ -24,6 +26,8 @@ interface ProjectsScreenProps {
   onSelectEmployeeById: (employeeId: string) => void;
   onOpenCreateHandover: () => void;
   onOpenAddProject?: () => void;
+  onEditProject?: (proj: Project) => void;
+  onDeleteProject?: (proj: Project) => void;
 }
 
 export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({
@@ -33,6 +37,8 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({
   onSelectEmployeeById,
   onOpenCreateHandover,
   onOpenAddProject,
+  onEditProject,
+  onDeleteProject,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [teamFilter, setTeamFilter] = useState('all');
@@ -73,13 +79,35 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onOpenCreateHandover}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-[#3525cd] hover:bg-[#2b1ea8] rounded transition-colors shadow-xs shrink-0 cursor-pointer"
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5" />
-            <span>Create Handover</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {onEditProject && (
+              <button
+                onClick={() => onEditProject(selectedProject)}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded transition-colors shadow-xs shrink-0 cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Edit</span>
+              </button>
+            )}
+
+            <button
+              onClick={onOpenCreateHandover}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-[#3525cd] hover:bg-[#2b1ea8] rounded transition-colors shadow-xs shrink-0 cursor-pointer"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <span>Create Handover</span>
+            </button>
+
+            {onDeleteProject && (
+              <button
+                onClick={() => onDeleteProject(selectedProject)}
+                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded transition-colors shadow-xs shrink-0 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Top Summary Cards (Section 14) */}
@@ -519,10 +547,32 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({
                     </td>
 
                     <td className="py-3 px-4 text-right">
-                      <span className="text-xs font-semibold text-indigo-600 group-hover:underline inline-flex items-center gap-1">
-                        <span>View</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </span>
+                      <div className="flex items-center justify-end gap-2">
+                        {onEditProject && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onEditProject(proj); }}
+                            title="Edit project"
+                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {onDeleteProject && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onDeleteProject(proj); }}
+                            title="Delete project"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <span className="text-xs font-semibold text-indigo-600 group-hover:underline inline-flex items-center gap-1">
+                          <span>View</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </span>
+                      </div>
                     </td>
                   </tr>
                 ))}

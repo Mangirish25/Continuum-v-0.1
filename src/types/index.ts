@@ -49,7 +49,10 @@ export interface Employee {
   avatar: string;
   initials: string;
   projectsCount: number;
+  /** Display names of assigned projects — for UI rendering only. */
   projects: string[];
+  /** Stable IDs of assigned projects — use these for filtering, not names. */
+  projectIds: string[];
   connectedSourcesCount: number;
   knowledgeScore: number; // e.g. 82%
   risk: RiskLevel;
@@ -102,7 +105,7 @@ export interface Handover {
   projectNames: string[];
   risk: RiskLevel;
   progress: number; // e.g. 62%
-  status: 'Draft' | 'Generated' | 'In Progress' | 'Email Sent';
+  status: 'Draft' | 'Generated' | 'In Progress' | 'Email Sent' | 'Reversed';
   createdAt: string;
   targetDate: string;
   summary: string;
@@ -122,6 +125,8 @@ export interface Handover {
   };
   sentAt?: string;
   sentToEmail?: string;
+  reversedAt?: string;
+  reversalReason?: string;
 }
 
 export interface SemanticSearchResult {

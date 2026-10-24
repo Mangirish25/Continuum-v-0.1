@@ -15,6 +15,7 @@ import {
   FolderGit2,
   Folder,
   FileText,
+  Undo2,
 } from 'lucide-react';
 import { SendHandoverEmailModal } from '../modals/SendHandoverEmailModal';
 
@@ -24,6 +25,10 @@ interface HandoversScreenProps {
   onSelectHandover: (handover: Handover | null) => void;
   onOpenCreateHandover: () => void;
   onUpdateHandover: (updated: Handover) => void;
+  onRevertHandover: (
+    handover: Handover,
+    reason: string
+  ) => Promise<Handover>;
   adminUser: AdminUser;
 }
 
@@ -33,10 +38,18 @@ export const HandoversScreen: React.FC<HandoversScreenProps> = ({
   onSelectHandover,
   onOpenCreateHandover,
   onUpdateHandover,
+  onRevertHandover,
   adminUser,
 }) => {
   const [isSendEmailModalOpen, setIsSendEmailModalOpen] = useState(false);
   const [emailSuccessBanner, setEmailSuccessBanner] = useState<string | null>(null);
+
+  const [handoverToRevert, setHandoverToRevert] =
+  useState<Handover | null>(null);
+
+const [revertReason, setRevertReason] = useState('');
+const [isReverting, setIsReverting] = useState(false);
+const [revertError, setRevertError] = useState<string | null>(null);
 
   const handleSendEmailSuccess = (recipientEmail: string) => {
     if (!selectedHandover) return;
@@ -51,6 +64,44 @@ export const HandoversScreen: React.FC<HandoversScreenProps> = ({
     setEmailSuccessBanner(`✓ Knowledge handover sent successfully to ${recipientEmail}`);
     setTimeout(() => setEmailSuccessBanner(null), 5000);
   };
+
+  const handleTakeBackHandover = async () => {
+  if (!handoverToRevert || !revertReason.trim()) {
+    setRevertError('Please provide a reason for taking back this handover.');
+    return;
+  }
+
+  setIsReverting(true);
+  setRevertError(null);
+
+  try {
+    const updatedHandover = await onRevertHandover(
+      handoverToRevert,
+      revertReason.trim()
+    );
+
+    // Update the handover in the parent state.
+    onUpdateHandover(updatedHandover);
+
+    // Refresh the currently selected detail view if applicable.
+    if (selectedHandover?.id === updatedHandover.id) {
+      onSelectHandover(updatedHandover);
+    }
+
+    setHandoverToRevert(null);
+    setRevertReason('');
+  } catch (error) {
+    console.error('Failed to take back handover:', error);
+
+    setRevertError(
+      error instanceof Error
+        ? error.message
+        : 'Unable to reverse the handover. Please try again.'
+    );
+  } finally {
+    setIsReverting(false);
+  }
+};
 
   // If a handover is selected, show Handover Detail (Section 21 & 22)
   if (selectedHandover) {
@@ -75,6 +126,8 @@ export const HandoversScreen: React.FC<HandoversScreenProps> = ({
                   className={`font-mono text-xs px-2 py-0.5 rounded font-semibold ${
                     selectedHandover.status === 'Email Sent'
                       ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                      : selectedHandover.status === 'Reversed'
+                      ? 'bg-rose-100 text-rose-800 border border-rose-300'
                       : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
                   }`}
                 >
@@ -101,6 +154,20 @@ export const HandoversScreen: React.FC<HandoversScreenProps> = ({
           <div className="p-3 bg-emerald-50 border border-emerald-300 rounded text-xs font-semibold text-emerald-900 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{emailSuccessBanner}</span>
+          </div>
+        )}
+
+        {/* Reversal info banner */}
+        {selectedHandover.status === 'Reversed' && selectedHandover.reversalReason && (
+          <div className="p-3 bg-rose-50 border border-rose-300 rounded text-xs font-semibold text-rose-900 flex items-start gap-2">
+            <Undo2 className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold">Handover Reversed</span>
+              {selectedHandover.reversedAt && (
+                <span className="font-normal text-rose-700"> on {selectedHandover.reversedAt}</span>
+              )}
+              <p className="font-normal mt-0.5">Reason: {selectedHandover.reversalReason}</p>
+            </div>
           </div>
         )}
 
@@ -306,13 +373,36 @@ export const HandoversScreen: React.FC<HandoversScreenProps> = ({
               Transfers full project documentation and pending tasks directly to {selectedHandover.recommendedSuccessor.name}.
             </p>
           </div>
-          <button
-            onClick={() => setIsSendEmailModalOpen(true)}
-            className="px-4 py-2 text-xs font-semibold text-white bg-[#3525cd] hover:bg-[#2b1ea8] rounded transition-colors shadow-xs inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>Send Handover by Email</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+  {selectedHandover.status !== 'Reversed' && (
+      <button
+        type="button"
+        onClick={() => {
+          setHandoverToRevert(selectedHandover);
+          setRevertReason('');
+          setRevertError(null);
+        }}
+        className="flex items-center gap-1.5 px-3 py-2 text-xs
+                   font-semibold text-rose-700 bg-rose-50
+                   border border-rose-200 hover:bg-rose-100
+                   rounded transition-colors"
+      >
+        <Undo2 className="w-3.5 h-3.5" />
+        <span>Take Back Handover</span>
+      </button>
+    )}
+
+  <button
+    onClick={() => setIsSendEmailModalOpen(true)}
+    className="flex items-center gap-1.5 px-4 py-2 text-xs
+               font-semibold text-white bg-[#3525cd]
+               hover:bg-[#2b1ea8] rounded transition-colors
+               shadow-xs shrink-0 cursor-pointer"
+  >
+    <Send className="w-3.5 h-3.5" />
+    <span>Send Handover by Email</span>
+  </button>
+</div>
         </div>
 
         {/* Send Email Modal */}
@@ -323,6 +413,126 @@ export const HandoversScreen: React.FC<HandoversScreenProps> = ({
           onSendSuccess={handleSendEmailSuccess}
           adminEmail={adminUser.email}
         />
+
+        {/* Take Back Handover Confirmation Dialog */}
+        {handoverToRevert && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="revert-dialog-title"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          >
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+              onClick={() => {
+                if (!isReverting) {
+                  setHandoverToRevert(null);
+                  setRevertReason('');
+                  setRevertError(null);
+                }
+              }}
+            />
+
+            {/* Dialog panel */}
+            <div className="relative z-10 w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-200 p-6 space-y-5">
+              {/* Header */}
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-rose-100 rounded-lg shrink-0">
+                  <Undo2 className="w-5 h-5 text-rose-600" />
+                </div>
+                <div>
+                  <h2 id="revert-dialog-title" className="text-sm font-bold text-slate-900">
+                    Take Back Handover
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Reversing handover for{' '}
+                    <span className="font-semibold text-slate-800">
+                      {handoverToRevert.employeeName}
+                    </span>
+                    {' → '}
+                    <span className="font-semibold text-slate-800">
+                      {handoverToRevert.projectNames.join(', ')}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Warning */}
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800">
+                This will mark the handover as <strong>Reversed</strong> and record the
+                action in the audit log. This cannot be undone.
+              </div>
+
+              {/* Reason input */}
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="revert-reason"
+                  className="block text-xs font-semibold text-slate-700"
+                >
+                  Reversal Reason <span className="text-rose-600">*</span>
+                </label>
+                <textarea
+                  id="revert-reason"
+                  rows={3}
+                  value={revertReason}
+                  onChange={(e) => {
+                    setRevertReason(e.target.value);
+                    if (revertError) setRevertError(null);
+                  }}
+                  disabled={isReverting}
+                  placeholder="Explain why this handover is being taken back…"
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-rose-400 focus:border-rose-400 resize-none disabled:opacity-60 disabled:bg-slate-50"
+                />
+              </div>
+
+              {/* Error message */}
+              {revertError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-300 rounded text-xs text-rose-800 font-medium">
+                  {revertError}
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex items-center justify-end gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHandoverToRevert(null);
+                    setRevertReason('');
+                    setRevertError(null);
+                  }}
+                  disabled={isReverting}
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-md transition-colors disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  id="confirm-revert-btn"
+                  onClick={handleTakeBackHandover}
+                  disabled={isReverting || !revertReason.trim()}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-md transition-colors disabled:opacity-60 flex items-center gap-1.5"
+                >
+                  {isReverting ? (
+                    <>
+                      <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                      </svg>
+                      <span>Reversing…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Undo2 className="w-3.5 h-3.5" />
+                      <span>Confirm Take Back</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -431,10 +641,12 @@ export const HandoversScreen: React.FC<HandoversScreenProps> = ({
 
                     <td className="py-3 px-4">
                       <span
-                        className={`font-mono text-[11px] font-medium px-2 py-0.5 rounded ${
+                        className={`font-mono text-[11px] font-medium px-2 py-0.5 rounded border ${
                           hnd.status === 'Email Sent'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-slate-100 text-slate-700'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : hnd.status === 'Reversed'
+                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
                         }`}
                       >
                         {hnd.status}

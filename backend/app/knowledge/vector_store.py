@@ -49,7 +49,7 @@ class ChromaVectorStore(BaseVectorStore):
                 self.client = chromadb.HttpClient(host=host, port=port)
             else:
                 # Persistent local ChromaDB storage
-                persist_path = os.path.abspath(settings.CHROMA_PERSIST_DIR)
+                persist_path = settings.resolved_chroma_dir
                 os.makedirs(persist_path, exist_ok=True)
                 logger.info(f"Initializing local ChromaDB client at {persist_path}")
                 self.client = chromadb.PersistentClient(path=persist_path)

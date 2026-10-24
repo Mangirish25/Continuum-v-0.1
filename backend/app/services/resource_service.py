@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
 from app.db.models.all_models import EmployeeResource, KnowledgeDocument
+from app.db.database import AsyncSessionLocal
 from app.schemas.resource import ResourceCreate, ResourceOut
 from app.knowledge.pipeline import ingestion_pipeline
 from app.knowledge.vector_store import vector_store_service
@@ -70,6 +71,14 @@ class ResourceService:
             await risk_service.calculate_project_risk(res.project_id, db)
 
         return sync_result
+
+    async def sync_resource_background(self, resource_id: str, access_token: Optional[str] = None) -> None:
+        """Run resource synchronization safely in background using its own dedicated DB session."""
+        try:
+            async with AsyncSessionLocal() as session:
+                await self.sync_resource(resource_id, session, access_token=access_token)
+        except Exception as e:
+            logger.error(f"Background synchronization worker failed for resource {resource_id}: {e}")
 
     async def delete_resource(self, resource_id: str, db: AsyncSession) -> bool:
         res = await self.get_resource(resource_id, db)

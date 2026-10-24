@@ -37,7 +37,7 @@ async def create_resource(
 ):
     res = await resource_service.create_resource(payload, db)
     # Trigger sync in background
-    background_tasks.add_task(resource_service.sync_resource, res.id, db)
+    background_tasks.add_task(resource_service.sync_resource_background, res.id)
     return res
 
 @router.post("/github", response_model=ResourceOut, status_code=status.HTTP_201_CREATED)
@@ -70,7 +70,7 @@ async def connect_github_repository(
         )
 
         res = await resource_service.create_resource(res_create, db)
-        background_tasks.add_task(resource_service.sync_resource, res.id, db)
+        background_tasks.add_task(resource_service.sync_resource_background, res.id)
         return res
     except Exception as e:
         raise BadRequestException(f"Failed to connect GitHub repository: {str(e)}")
@@ -103,7 +103,7 @@ async def select_gdrive_folder(
     )
 
     res = await resource_service.create_resource(res_create, db)
-    background_tasks.add_task(resource_service.sync_resource, res.id, db)
+    background_tasks.add_task(resource_service.sync_resource_background, res.id)
     return res
 
 @router.get("/notion/pages", response_model=List[Dict[str, Any]])
@@ -134,7 +134,7 @@ async def select_notion_page(
     )
 
     res = await resource_service.create_resource(res_create, db)
-    background_tasks.add_task(resource_service.sync_resource, res.id, db)
+    background_tasks.add_task(resource_service.sync_resource_background, res.id)
     return res
 
 @router.get("/jira/projects", response_model=List[Dict[str, Any]])
@@ -154,7 +154,7 @@ async def map_jira_project(
 ):
     """Flow 5 Step 2: Map Jira project to Continuum project."""
     res_create = ResourceCreate(
-        employee_id=None,
+        employee_id=payload.employee_id,
         project_id=payload.project_id,
         provider="JIRA",
         resource_type="PROJECT_ISSUES",
@@ -165,7 +165,7 @@ async def map_jira_project(
     )
 
     res = await resource_service.create_resource(res_create, db)
-    background_tasks.add_task(resource_service.sync_resource, res.id, db)
+    background_tasks.add_task(resource_service.sync_resource_background, res.id)
     return res
 
 @router.get("/{resource_id}", response_model=ResourceOut)
@@ -183,7 +183,7 @@ async def sync_resource_now(
     db: AsyncSession = Depends(get_db),
     current_admin: Admin = Depends(get_current_admin)
 ):
-    background_tasks.add_task(resource_service.sync_resource, resource_id, db)
+    background_tasks.add_task(resource_service.sync_resource_background, resource_id)
     return {"message": "Resource synchronization queued", "resource_id": resource_id, "status": "SYNCING"}
 
 @router.delete("/{resource_id}", status_code=status.HTTP_204_NO_CONTENT)

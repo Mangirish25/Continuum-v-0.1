@@ -229,6 +229,23 @@ export async function createEmployee(payload: {
   });
 }
 
+export async function updateEmployee(
+  employeeId: string,
+  payload: {
+    name?: string;
+    email?: string;
+    role?: string;
+    team?: string;
+    status?: string;
+    skills?: string[];
+  }
+): Promise<any> {
+  return apiFetch<any>(`/employees/${employeeId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function deleteEmployee(employeeId: string): Promise<void> {
   return apiFetch(`/employees/${employeeId}`, { method: 'DELETE' });
 }
@@ -246,6 +263,20 @@ export async function createProject(payload: {
 }): Promise<any> {
   return apiFetch<any>('/projects', {
     method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateProject(
+  projectId: string,
+  payload: {
+    name?: string;
+    description?: string;
+    status?: string;
+  }
+): Promise<any> {
+  return apiFetch<any>(`/projects/${projectId}`, {
+    method: 'PATCH',
     body: JSON.stringify(payload),
   });
 }
@@ -277,6 +308,13 @@ export async function sendHandover(handoverId: string, payload: { recipient_emai
   });
 }
 
+export async function revertHandover(handoverId: string, reason: string): Promise<any> {
+  return apiFetch<any>(`/handovers/${handoverId}/reverse`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
 // Dashboard and Risk API Helpers
 export async function getDashboardSummary(): Promise<any> {
   return apiFetch<any>('/dashboard');
@@ -298,6 +336,56 @@ export async function searchKnowledge(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+// Centralized Jira Management API Helpers
+export interface JiraWorkspaceStatusData {
+  connected: boolean;
+  verified: boolean;
+  workspace_url?: string;
+  admin_email?: string;
+  status: string;
+  error?: string;
+  last_synced_at?: string;
+  resources_count: number;
+  available_projects: Array<{
+    id: string;
+    key: string;
+    name: string;
+    projectTypeKey?: string;
+  }>;
+}
+
+export async function getJiraWorkspaceStatus(): Promise<JiraWorkspaceStatusData> {
+  return apiFetch<JiraWorkspaceStatusData>('/connections/jira');
+}
+
+export async function configureJiraWorkspace(payload: {
+  workspace_url: string;
+  admin_email?: string;
+  api_token: string;
+}): Promise<JiraWorkspaceStatusData> {
+  return apiFetch<JiraWorkspaceStatusData>('/connections/jira/configure', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function verifyJiraWorkspace(): Promise<{
+  verified: boolean;
+  status: string;
+  message: string;
+  workspace_url?: string;
+}> {
+  return apiFetch('/connections/jira/verify', { method: 'POST' });
+}
+
+export async function disconnectJiraWorkspace(): Promise<{ message: string; status: string }> {
+  return apiFetch('/connections/jira', { method: 'DELETE' });
+}
+
+export async function getJiraProjects(): Promise<Array<{ id: string; key: string; name: string }>> {
+  return apiFetch('/connections/jira/projects');
 }
 
 // Notifications API Helpers

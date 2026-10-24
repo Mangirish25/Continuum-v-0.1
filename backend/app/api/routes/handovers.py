@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, status, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.schemas.handover import HandoverCreate, HandoverOut, HandoverSendRequest
+from app.schemas.handover import HandoverCreate, HandoverOut, HandoverSendRequest, HandoverReverseRequest
 from app.services.handover_service import handover_service
 from app.db.models.all_models import Admin
 from app.api.dependencies import get_current_admin
@@ -44,3 +44,16 @@ async def confirm_and_send_handover(
 ):
     """Flow 8 Step 3: Admin explicit confirmation step to dispatch handover email report."""
     return await handover_service.send_handover(handover_id, payload, db)
+
+@router.post("/{handover_id}/reverse", response_model=HandoverOut)
+async def reverse_handover(
+    handover_id: str,
+    payload: HandoverReverseRequest,
+    db: AsyncSession = Depends(get_db),
+    current_admin: Admin = Depends(get_current_admin)
+):
+    """
+    Take back / reverse a handover that is in READY_FOR_REVIEW or SENT status.
+    Records the reason and the authenticated actor in an immutable audit log.
+    """
+    return await handover_service.reverse_handover(handover_id, payload, current_admin, db)

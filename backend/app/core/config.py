@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     # Vector Storage
     CHROMA_URL: Optional[str] = None # None for embedded local Chroma persistent storage
     CHROMA_PERSIST_DIR: str = "./chroma_data"
+
+    @property
+    def resolved_chroma_dir(self) -> str:
+        if os.path.isabs(self.CHROMA_PERSIST_DIR):
+            return self.CHROMA_PERSIST_DIR
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        return os.path.join(base_dir, self.CHROMA_PERSIST_DIR.lstrip("./"))
     
     # Email Service
     EMAIL_PROVIDER: str = "console"  # console, smtp, mock

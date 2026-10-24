@@ -65,6 +65,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         initials: initials || 'EM',
         projectsCount: 0,
         projects: [],
+        projectIds: [],
         connectedSourcesCount: 0,
         knowledgeScore: 0,
         risk: 'low',

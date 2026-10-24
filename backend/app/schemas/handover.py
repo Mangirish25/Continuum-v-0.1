@@ -10,6 +10,9 @@ class HandoverCreate(BaseModel):
 class HandoverSendRequest(BaseModel):
     recipient_email: Optional[EmailStr] = None
 
+class HandoverReverseRequest(BaseModel):
+    reason: str = Field(..., min_length=1, description="Non-empty reason for reversing this handover")
+
 class SuccessorRecommendation(BaseModel):
     employee_id: str
     name: str
@@ -41,7 +44,7 @@ class HandoverOut(BaseModel):
     employee_email: Optional[str] = None
     project_id: Optional[str] = None
     project_name: Optional[str] = None
-    status: str # DRAFT, GENERATING, READY_FOR_REVIEW, SENT, FAILED
+    status: str  # DRAFT, GENERATING, READY_FOR_REVIEW, SENT, FAILED, REVERSED
     generated_summary: Optional[str] = None
     knowledge_package: Optional[Dict[str, Any]] = None
     recommended_successor_id: Optional[str] = None
@@ -49,5 +52,7 @@ class HandoverOut(BaseModel):
     risk_summary: Optional[Dict[str, Any]] = None
     recipient_email: Optional[str] = None
     sent_at: Optional[datetime] = None
+    reversed_at: Optional[datetime] = None
+    reversal_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime

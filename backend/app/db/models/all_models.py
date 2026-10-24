@@ -168,19 +168,41 @@ class Handover(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
     employee_id: Mapped[str] = mapped_column(String, ForeignKey("employees.id", ondelete="CASCADE"), nullable=False)
     project_id: Mapped[Optional[str]] = mapped_column(String, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True)
-    status: Mapped[str] = mapped_column(String, default="DRAFT") # DRAFT, GENERATING, READY_FOR_REVIEW, SENT, FAILED
+    status: Mapped[str] = mapped_column(String, default="DRAFT") # DRAFT, GENERATING, READY_FOR_REVIEW, SENT, FAILED, REVERSED
     generated_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     knowledge_package: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     recommended_successor_id: Mapped[Optional[str]] = mapped_column(String, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
     risk_summary: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
     recipient_email: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    reversed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    reversal_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
 
     employee = relationship("Employee", foreign_keys=[employee_id], back_populates="handovers")
     project = relationship("Project", back_populates="handovers")
     recommended_successor = relationship("Employee", foreign_keys=[recommended_successor_id])
+    audit_logs = relationship("HandoverAuditLog", back_populates="handover", cascade="all, delete-orphan")
+
+class HandoverAuditLog(Base):
+    """Immutable audit record for every status change on a handover.
+    Currently populated on reversal; can be extended for other transitions.
+    """
+    __tablename__ = "handover_audit_logs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
+    handover_id: Mapped[str] = mapped_column(String, ForeignKey("handovers.id", ondelete="CASCADE"), nullable=False)
+    admin_id: Mapped[Optional[str]] = mapped_column(String, ForeignKey("admins.id", ondelete="SET NULL"), nullable=True)
+    action: Mapped[str] = mapped_column(String, nullable=False)  # e.g. REVERSED, SENT
+    previous_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    new_status: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    audit_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    handover = relationship("Handover", back_populates="audit_logs")
+
 
 class Notification(Base):
     __tablename__ = "notifications"

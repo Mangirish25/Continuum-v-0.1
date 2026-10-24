@@ -33,7 +33,7 @@ services:
     image: chromadb/chroma:0.4.24
     container_name: continuum_chroma
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - chroma_data:/chroma/chroma
 
@@ -71,6 +71,8 @@ services:
       dockerfile: Dockerfile
     container_name: continuum_worker
     command: celery -A app.workers.celery_app worker --loglevel=info
+    healthcheck:
+      disable: true
     environment:
       - DATABASE_URL=postgresql+asyncpg://continuum:continuum_password@postgres:5432/continuum_db
       - SYNC_DATABASE_URL=postgresql+psycopg2://continuum:continuum_password@postgres:5432/continuum_db

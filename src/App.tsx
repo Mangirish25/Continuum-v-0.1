@@ -29,6 +29,8 @@ import { SettingsScreen } from './components/screens/SettingsScreen';
 // Modals
 import { AddEmployeeModal } from './components/modals/AddEmployeeModal';
 import { AddProjectModal } from './components/modals/AddProjectModal';
+import { EditEmployeeModal } from './components/modals/EditEmployeeModal';
+import { EditProjectModal } from './components/modals/EditProjectModal';
 import { ConnectResourceModal } from './components/modals/ConnectResourceModal';
 import { CreateHandoverModal } from './components/modals/CreateHandoverModal';
 import { CommandPalette } from './components/modals/CommandPalette';
@@ -41,6 +43,11 @@ import {
   getSources,
   getHandovers,
   getNotifications,
+  revertHandover,
+  updateEmployee,
+  deleteEmployee,
+  updateProject,
+  deleteProject,
   RegisteredSource,
 } from './lib/api';
 
@@ -62,7 +69,10 @@ function mapBackendEmployee(b: any): Employee {
     avatar: b.avatar || `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=250`,
     initials,
     projectsCount: (b.projects || []).length,
+    // Display names only — for UI rendering
     projects: (b.projects || []).map((p: any) => p.name || p),
+    // Stable IDs — used for filtering the project dropdown
+    projectIds: (b.projects || []).map((p: any) => p.id).filter(Boolean),
     connectedSourcesCount: b.connected_resources_count || 0,
     knowledgeScore: Math.round(b.knowledge_score || 0),
     risk: (b.risk_level?.toLowerCase() || 'low') as RiskLevel,
@@ -135,7 +145,7 @@ function mapBackendHandover(h: any): Handover {
     projectNames: h.project_name ? [h.project_name] : (kp.projects || []),
     risk: (h.risk_summary?.risk_level?.toLowerCase() || 'medium') as RiskLevel,
     progress: h.status === 'SENT' ? 100 : h.status === 'READY_FOR_REVIEW' ? 80 : 30,
-    status: h.status === 'SENT' ? 'Email Sent' : h.status === 'READY_FOR_REVIEW' ? 'Generated' : 'Draft',
+    status: h.status === 'SENT' ? 'Email Sent' : h.status === 'READY_FOR_REVIEW' ? 'Generated' : h.status === 'REVERSED' ? 'Reversed' : 'Draft',
     createdAt: h.created_at ? new Date(h.created_at).toLocaleDateString() : 'Recently',
     targetDate: 'Pending',
     summary: h.generated_summary || kp.summary || 'Knowledge handover package.',
@@ -162,6 +172,8 @@ function mapBackendHandover(h: any): Handover {
     },
     sentAt: h.sent_at ? new Date(h.sent_at).toLocaleDateString() : undefined,
     sentToEmail: h.recipient_email || undefined,
+    reversedAt: h.reversed_at ? new Date(h.reversed_at).toLocaleDateString() : undefined,
+    reversalReason: h.reversal_reason || undefined,
   };
 }
 
@@ -202,6 +214,15 @@ export default function App() {
   // Modal open states
   const [isAddEmployeeOpen, setIsAddEmployeeOpen] = useState(false);
   const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
+  const [isEditEmployeeOpen, setIsEditEmployeeOpen] = useState(false);
+  const [employeeToEdit, setEmployeeToEdit] = useState<Employee | null>(null);
+  const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+  const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
+  const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [isDeletingEmployee, setIsDeletingEmployee] = useState(false);
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [isConnectResourceOpen, setIsConnectResourceOpen] = useState(false);
   const [preselectedEmpForResource, setPreselectedEmpForResource] = useState<Employee | null>(null);
   const [isCreateHandoverOpen, setIsCreateHandoverOpen] = useState(false);
@@ -398,6 +419,64 @@ export default function App() {
     setNotifications((prev) => [newNotif, ...prev]);
   };
 
+  // Handlers for Edit Employee
+  const handleOpenEditEmployee = (emp: Employee) => {
+    setEmployeeToEdit(emp);
+    setIsEditEmployeeOpen(true);
+  };
+
+  const handleUpdateEmployee = (updated: Employee) => {
+    setEmployees((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+    // Keep the profile view in sync if it's open
+    if (selectedEmployee?.id === updated.id) {
+      setSelectedEmployee(updated);
+    }
+    const newNotif: NotificationItem = {
+      id: `notif-${Date.now()}`,
+      title: `Employee updated: ${updated.name}`,
+      description: `${updated.role} · ${updated.team} — record saved.`,
+      timestamp: 'Just now',
+      read: false,
+      type: 'auth',
+    };
+    setNotifications((prev) => [newNotif, ...prev]);
+  };
+
+  // Handlers for Delete Employee
+  const handleOpenDeleteEmployee = (emp: Employee) => {
+    setDeleteError('');
+    setEmployeeToDelete(emp);
+  };
+
+  const handleConfirmDeleteEmployee = async () => {
+    if (!employeeToDelete) return;
+    setIsDeletingEmployee(true);
+    setDeleteError('');
+    try {
+      await deleteEmployee(employeeToDelete.id);
+      setEmployees((prev) => prev.filter((e) => e.id !== employeeToDelete.id));
+      // Navigate away from the deleted employee's profile
+      if (selectedEmployee?.id === employeeToDelete.id) {
+        setSelectedEmployee(null);
+        setCurrentScreen('employees');
+      }
+      const newNotif: NotificationItem = {
+        id: `notif-${Date.now()}`,
+        title: `Employee removed: ${employeeToDelete.name}`,
+        description: `Employee record and related resources have been deleted.`,
+        timestamp: 'Just now',
+        read: false,
+        type: 'auth',
+      };
+      setNotifications((prev) => [newNotif, ...prev]);
+      setEmployeeToDelete(null);
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to delete employee. Please try again.');
+    } finally {
+      setIsDeletingEmployee(false);
+    }
+  };
+
   // Handlers for Add Project
   const handleProjectCreated = (newProj: Project) => {
     setProjects((prev) => [newProj, ...prev]);
@@ -413,6 +492,62 @@ export default function App() {
       type: 'sync',
     };
     setNotifications((prev) => [newNotif, ...prev]);
+  };
+
+  // Handlers for Edit Project
+  const handleOpenEditProject = (proj: Project) => {
+    setProjectToEdit(proj);
+    setIsEditProjectOpen(true);
+  };
+
+  const handleUpdateProject = (updated: Project) => {
+    setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    if (selectedProject?.id === updated.id) {
+      setSelectedProject(updated);
+    }
+    const newNotif: NotificationItem = {
+      id: `notif-${Date.now()}`,
+      title: `Project updated: ${updated.name}`,
+      description: `${updated.team} — changes saved.`,
+      timestamp: 'Just now',
+      read: false,
+      type: 'sync',
+    };
+    setNotifications((prev) => [newNotif, ...prev]);
+  };
+
+  // Handlers for Delete Project
+  const handleOpenDeleteProject = (proj: Project) => {
+    setDeleteError('');
+    setProjectToDelete(proj);
+  };
+
+  const handleConfirmDeleteProject = async () => {
+    if (!projectToDelete) return;
+    setIsDeletingProject(true);
+    setDeleteError('');
+    try {
+      await deleteProject(projectToDelete.id);
+      setProjects((prev) => prev.filter((p) => p.id !== projectToDelete.id));
+      if (selectedProject?.id === projectToDelete.id) {
+        setSelectedProject(null);
+        setCurrentScreen('projects');
+      }
+      const newNotif: NotificationItem = {
+        id: `notif-${Date.now()}`,
+        title: `Project removed: ${projectToDelete.name}`,
+        description: `Project record, risk scores, and related resources have been deleted.`,
+        timestamp: 'Just now',
+        read: false,
+        type: 'sync',
+      };
+      setNotifications((prev) => [newNotif, ...prev]);
+      setProjectToDelete(null);
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to delete project. Please try again.');
+    } finally {
+      setIsDeletingProject(false);
+    }
   };
 
   // Handlers for Connect Resource
@@ -486,6 +621,25 @@ export default function App() {
       };
       setNotifications((prev) => [newNotif, ...prev]);
     }
+  };
+
+  // Handler for Take Back Handover
+  const handleRevertHandover = async (handover: Handover, reason: string): Promise<Handover> => {
+    const raw = await revertHandover(handover.id, reason);
+    const updated = mapBackendHandover(raw);
+    handleUpdateHandover(updated);
+
+    const newNotif: NotificationItem = {
+      id: `notif-${Date.now()}`,
+      title: `Handover taken back`,
+      description: `${updated.employeeName}'s handover was reversed. Reason: ${reason}`,
+      timestamp: 'Just now',
+      read: false,
+      type: 'handover',
+    };
+    setNotifications((prev) => [newNotif, ...prev]);
+
+    return updated;
   };
 
   // Navigation helpers
@@ -639,6 +793,8 @@ export default function App() {
                   employees={employees}
                   onSelectEmployee={handleSelectEmployee}
                   onOpenAddEmployee={() => setIsAddEmployeeOpen(true)}
+                  onEditEmployee={handleOpenEditEmployee}
+                  onDeleteEmployee={handleOpenDeleteEmployee}
                 />
               )}
 
@@ -655,6 +811,8 @@ export default function App() {
                   onStartHandoverForEmployee={handleStartHandoverForEmployee}
                   onSelectProject={handleSelectProject}
                   onDisconnectResource={handleDisconnectResource}
+                  onEditEmployee={handleOpenEditEmployee}
+                  onDeleteEmployee={handleOpenDeleteEmployee}
                 />
               )}
 
@@ -669,6 +827,8 @@ export default function App() {
                     setIsCreateHandoverOpen(true);
                   }}
                   onOpenAddProject={() => setIsAddProjectOpen(true)}
+                  onEditProject={handleOpenEditProject}
+                  onDeleteProject={handleOpenDeleteProject}
                 />
               )}
 
@@ -697,6 +857,7 @@ export default function App() {
                     setIsCreateHandoverOpen(true);
                   }}
                   onUpdateHandover={handleUpdateHandover}
+                  onRevertHandover={handleRevertHandover}
                   adminUser={currentAdmin}
                 />
               )}
@@ -731,6 +892,104 @@ export default function App() {
         onClose={() => setIsAddEmployeeOpen(false)}
         onCreateEmployee={handleCreateEmployee}
       />
+
+      {employeeToEdit && (
+        <EditEmployeeModal
+          isOpen={isEditEmployeeOpen}
+          onClose={() => { setIsEditEmployeeOpen(false); setEmployeeToEdit(null); }}
+          employee={employeeToEdit}
+          onUpdateEmployee={(updated) => {
+            handleUpdateEmployee(updated);
+          }}
+        />
+      )}
+
+      {projectToEdit && (
+        <EditProjectModal
+          isOpen={isEditProjectOpen}
+          onClose={() => { setIsEditProjectOpen(false); setProjectToEdit(null); }}
+          project={projectToEdit}
+          onUpdateProject={(updated) => {
+            handleUpdateProject(updated);
+          }}
+        />
+      )}
+
+      {/* Delete Employee Confirmation Dialog */}
+      {employeeToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white border border-slate-200 rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 bg-rose-50">
+              <h2 className="text-sm font-bold text-slate-900">Delete Employee</h2>
+              <p className="text-[11px] text-slate-500 mt-0.5">{employeeToDelete.name} · {employeeToDelete.role}</p>
+            </div>
+            <div className="p-6 space-y-4 text-xs">
+              {deleteError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded text-rose-700">{deleteError}</div>
+              )}
+              <p className="text-slate-700 leading-relaxed">
+                Are you sure you want to permanently delete <strong>{employeeToDelete.name}</strong>? This will also remove their connected knowledge resources and handover records. <strong className="text-rose-700">This action cannot be undone.</strong>
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => { setEmployeeToDelete(null); setDeleteError(''); }}
+                  disabled={isDeletingEmployee}
+                  className="px-3.5 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded border border-slate-200 transition-colors disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteEmployee}
+                  disabled={isDeletingEmployee}
+                  className="px-4 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded transition-colors shadow-xs disabled:opacity-60 flex items-center gap-1.5"
+                >
+                  {isDeletingEmployee ? 'Deleting...' : 'Yes, Delete Employee'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Project Confirmation Dialog */}
+      {projectToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white border border-slate-200 rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 bg-rose-50">
+              <h2 className="text-sm font-bold text-slate-900">Delete Project</h2>
+              <p className="text-[11px] text-slate-500 mt-0.5">{projectToDelete.name} · {projectToDelete.code}</p>
+            </div>
+            <div className="p-6 space-y-4 text-xs">
+              {deleteError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded text-rose-700">{deleteError}</div>
+              )}
+              <p className="text-slate-700 leading-relaxed">
+                Are you sure you want to permanently delete project <strong>{projectToDelete.name}</strong>? This will also remove connected knowledge sources, risk scores, and any associated handover records. <strong className="text-rose-700">This action cannot be undone.</strong>
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => { setProjectToDelete(null); setDeleteError(''); }}
+                  disabled={isDeletingProject}
+                  className="px-3.5 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded border border-slate-200 transition-colors disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteProject}
+                  disabled={isDeletingProject}
+                  className="px-4 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded transition-colors shadow-xs disabled:opacity-60 flex items-center gap-1.5"
+                >
+                  {isDeletingProject ? 'Deleting...' : 'Yes, Delete Project'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <AddProjectModal
         isOpen={isAddProjectOpen}

@@ -33,6 +33,7 @@ class JiraProjectMap(BaseModel):
     jira_project_key: str
     jira_project_name: str
     project_id: Optional[str] = None
+    employee_id: Optional[str] = None
 
 class ResourceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)

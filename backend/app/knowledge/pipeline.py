@@ -14,7 +14,8 @@ from app.knowledge.chunking import DocumentChunker
 from app.knowledge.embeddings import embedding_service
 from app.knowledge.vector_store import vector_store_service
 
-from app.db.models.all_models import EmployeeResource, KnowledgeDocument, KnowledgeChunk
+from app.db.models.all_models import EmployeeResource, KnowledgeDocument, KnowledgeChunk, OAuthConnection, Employee, Project
+from app.core.security import decrypt_token
 from app.core.logging import logger
 
 class IngestionPipeline:
@@ -23,15 +24,55 @@ class IngestionPipeline:
         self.embedding_service = embedding_service
         self.vector_store = vector_store_service
 
+    async def get_connector_for_resource(
+        self,
+        resource: EmployeeResource,
+        db: AsyncSession,
+        access_token: Optional[str] = None
+    ) -> BaseConnector:
+        provider_upper = resource.provider.upper()
+        if provider_upper == "GITHUB":
+            return GitHubConnector()
+        elif provider_upper in ["GOOGLE_DRIVE", "GOOGLEDRIVE", "GDRIVE"]:
+            token = access_token
+            if not token:
+                conn_stmt = select(OAuthConnection).where(
+                    OAuthConnection.provider.in_(["GOOGLE_DRIVE", "GOOGLE"])
+                )
+                conn = (await db.execute(conn_stmt)).scalar_one_or_none()
+                if conn and conn.access_token_encrypted:
+                    token = decrypt_token(conn.access_token_encrypted)
+            return GoogleDriveConnector(access_token=token)
+        elif provider_upper == "NOTION":
+            token = access_token
+            if not token:
+                conn_stmt = select(OAuthConnection).where(OAuthConnection.provider == "NOTION")
+                conn = (await db.execute(conn_stmt)).scalar_one_or_none()
+                if conn and conn.access_token_encrypted:
+                    token = decrypt_token(conn.access_token_encrypted)
+            return NotionConnector(access_token=token)
+        elif provider_upper in ["JIRA", "ATLASSIAN"]:
+            token = access_token
+            site_url = None
+            conn_stmt = select(OAuthConnection).where(OAuthConnection.provider == "JIRA")
+            conn = (await db.execute(conn_stmt)).scalar_one_or_none()
+            if conn:
+                if conn.access_token_encrypted:
+                    token = decrypt_token(conn.access_token_encrypted) or token
+                site_url = conn.provider_account_id
+            return JiraConnector(access_token=token, site_url=site_url)
+        else:
+            raise ValueError(f"Unsupported provider connector: {resource.provider}")
+
     def get_connector(self, provider: str, access_token: Optional[str] = None) -> BaseConnector:
         provider_upper = provider.upper()
         if provider_upper == "GITHUB":
             return GitHubConnector()
-        elif provider_upper == "GOOGLE_DRIVE":
+        elif provider_upper in ["GOOGLE_DRIVE", "GOOGLEDRIVE", "GDRIVE"]:
             return GoogleDriveConnector(access_token=access_token)
         elif provider_upper == "NOTION":
             return NotionConnector(access_token=access_token)
-        elif provider_upper == "JIRA":
+        elif provider_upper in ["JIRA", "ATLASSIAN"]:
             return JiraConnector(access_token=access_token)
         else:
             raise ValueError(f"Unsupported provider connector: {provider}")
@@ -55,13 +96,30 @@ class IngestionPipeline:
         await db.flush()
 
         try:
-            connector = self.get_connector(resource.provider, access_token=access_token)
+            connector = await self.get_connector_for_resource(resource, db, access_token=access_token)
             
+            # Resolve employee name and project name for rich attribution
+            emp_name = None
+            if resource.employee_id:
+                emp_stmt = select(Employee).where(Employee.id == resource.employee_id)
+                emp = (await db.execute(emp_stmt)).scalar_one_or_none()
+                if emp:
+                    emp_name = emp.name
+
+            proj_name = None
+            if resource.project_id:
+                proj_stmt = select(Project).where(Project.id == resource.project_id)
+                proj = (await db.execute(proj_stmt)).scalar_one_or_none()
+                if proj:
+                    proj_name = proj.name
+
             # 1. Fetch normalized documents from connector
             norm_docs: List[NormalizedDocument] = await connector.fetch_documents(
                 external_resource_id=resource.external_resource_id,
                 employee_id=resource.employee_id,
-                project_id=resource.project_id
+                project_id=resource.project_id,
+                employee_name=emp_name,
+                project_name=proj_name
             )
 
             processed_count = 0
@@ -121,7 +179,9 @@ class IngestionPipeline:
                     "document_id": doc_obj.id,
                     "resource_id": resource.id,
                     "employee_id": doc_obj.employee_id or "",
+                    "employee_name": emp_name or "",
                     "project_id": doc_obj.project_id or "",
+                    "project_name": proj_name or "",
                     "provider": resource.provider,
                     "title": doc_obj.title,
                     "source_url": doc_obj.source_url or "",
@@ -168,6 +228,9 @@ class IngestionPipeline:
             resource.status = "SYNCED"
             resource.last_synced_at = datetime.now(timezone.utc)
             resource.last_successful_sync_at = datetime.now(timezone.utc)
+            res_meta = dict(resource.resource_metadata or {})
+            res_meta["indexed_documents_count"] = processed_count
+            resource.resource_metadata = res_meta
             await db.commit()
 
             logger.info(f"Sync completed for resource '{resource.name}' ({resource.id}): {processed_count} processed, {unchanged_count} unchanged")
