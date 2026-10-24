@@ -8,14 +8,25 @@ from app.core.config import settings
 Base = declarative_base()
 
 # Configure database URLs
+import os
+
 db_url = settings.DATABASE_URL
 sync_db_url = settings.SYNC_DATABASE_URL or settings.DATABASE_URL.replace("+asyncpg", "+psycopg2")
 
 # Handle SQLite vs PostgreSQL async engine configuration
 if "sqlite" in db_url:
+    # Anchor relative SQLite file paths to the backend directory to ensure consistency across execution directories
+    if ":///" in db_url and ":memory:" not in db_url:
+        path_part = db_url.split(":///", 1)[1]
+        if not os.path.isabs(path_part):
+            backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            abs_db_file = os.path.join(backend_dir, path_part).replace("\\", "/")
+            db_url = f"sqlite+aiosqlite:///{abs_db_file}"
+            sync_db_url = f"sqlite:///{abs_db_file}"
+
     async_db_url = db_url if "sqlite+aiosqlite" in db_url else db_url.replace("sqlite://", "sqlite+aiosqlite://")
     engine = create_async_engine(async_db_url, connect_args={"check_same_thread": False})
-    sync_engine = create_engine(db_url, connect_args={"check_same_thread": False})
+    sync_engine = create_engine(sync_db_url or db_url, connect_args={"check_same_thread": False})
 else:
     # asyncpg expects 'ssl' parameter, not 'sslmode' (which is psycopg2/libpq parameter)
     if "+asyncpg" in db_url and "sslmode=" in db_url:

@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   Calendar,
   AlertTriangle,
+  Pencil,
 } from 'lucide-react';
 
 interface EmployeeProfileScreenProps {
@@ -26,6 +27,8 @@ interface EmployeeProfileScreenProps {
   onStartHandoverForEmployee: (emp: Employee) => void;
   onSelectProject: (proj: Project) => void;
   onDisconnectResource: (resourceId: string) => void;
+  onEditEmployee: (emp: Employee) => void;
+  onDeleteEmployee: (emp: Employee) => void;
 }
 
 export const EmployeeProfileScreen: React.FC<EmployeeProfileScreenProps> = ({
@@ -37,6 +40,8 @@ export const EmployeeProfileScreen: React.FC<EmployeeProfileScreenProps> = ({
   onStartHandoverForEmployee,
   onSelectProject,
   onDisconnectResource,
+  onEditEmployee,
+  onDeleteEmployee,
 }) => {
   // Filter resources associated with this employee
   const employeeResources = connectedResources.filter((r) => r.employeeId === employee.id);
@@ -78,6 +83,15 @@ export const EmployeeProfileScreen: React.FC<EmployeeProfileScreenProps> = ({
         {/* Action buttons */}
         <div className="flex items-center gap-2">
           <button
+            onClick={() => onEditEmployee(employee)}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded transition-colors shadow-xs cursor-pointer"
+            title="Edit employee details"
+          >
+            <Pencil className="w-3.5 h-3.5 text-indigo-500" />
+            <span>Edit</span>
+          </button>
+
+          <button
             onClick={() => onOpenConnectResource(employee)}
             className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded transition-colors shadow-xs cursor-pointer"
           >
@@ -91,6 +105,15 @@ export const EmployeeProfileScreen: React.FC<EmployeeProfileScreenProps> = ({
           >
             <ArrowRightLeft className="w-3.5 h-3.5" />
             <span>Start Handover</span>
+          </button>
+
+          <button
+            onClick={() => onDeleteEmployee(employee)}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded transition-colors shadow-xs cursor-pointer"
+            title="Delete employee"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete</span>
           </button>
         </div>
       </div>

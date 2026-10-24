@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Employee, Project, ConnectedResource, SourceType } from '../../types';
+import { getJiraWorkspaceStatus, JiraWorkspaceStatusData } from '../../lib/api';
 import {
   X,
   Github,
@@ -11,6 +12,7 @@ import {
   ShieldCheck,
   RefreshCw,
   Folder,
+  AlertCircle,
 } from 'lucide-react';
 
 interface ConnectResourceModalProps {
@@ -32,11 +34,12 @@ export const ConnectResourceModal: React.FC<ConnectResourceModalProps> = ({
 }) => {
   const [selectedProvider, setSelectedProvider] = useState<SourceType>('github');
 
-  // Form states
+  // Employee selection
   const [employeeId, setEmployeeId] = useState(
     preselectedEmployee ? preselectedEmployee.id : employees[0]?.id || ''
   );
-  const [projectId, setProjectId] = useState(projects[0]?.id || '');
+  // Project selection — initialized empty; derived from employee assignments
+  const [projectId, setProjectId] = useState('');
 
   // GitHub fields
   const [repoUrl, setRepoUrl] = useState('');
@@ -54,15 +57,76 @@ export const ConnectResourceModal: React.FC<ConnectResourceModalProps> = ({
   // Jira fields
   const [jiraProjectCode, setJiraProjectCode] = useState('');
   const [isSyncingJira, setIsSyncingJira] = useState(false);
+  const [jiraWorkspace, setJiraWorkspace] = useState<JiraWorkspaceStatusData | null>(null);
+  const [loadingJiraWorkspace, setLoadingJiraWorkspace] = useState(false);
 
   // API Submission States
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // ── Derived: current employee object ──────────────────────────────────────
+  const currentEmp = useMemo(
+    () => employees.find((e) => e.id === employeeId) || null,
+    [employees, employeeId]
+  );
+
+  // ── Derived: projects assigned to the selected employee ───────────────────
+  // Uses stable project IDs from currentEmp.projectIds (never names).
+  const employeeProjects = useMemo(() => {
+    if (!currentEmp) return [];
+    const assignedIds = new Set((currentEmp.projectIds || []).filter(Boolean));
+    if (assignedIds.size === 0) return [];
+    return projects.filter((p) => assignedIds.has(p.id));
+  }, [currentEmp, projects]);
+
+  // ── Effect: reset/revalidate project when employee changes ────────────────
+  useEffect(() => {
+    if (!isOpen) return;
+    setProjectId((prev) => {
+      const isStillValid = employeeProjects.some((p) => p.id === prev);
+      return isStillValid ? prev : employeeProjects[0]?.id || '';
+    });
+  }, [employeeId, employeeProjects, isOpen]);
+
+  // ── Effect: sync preselected employee when modal opens ────────────────────
+  useEffect(() => {
+    if (!isOpen) return;
+    if (preselectedEmployee) {
+      setEmployeeId(preselectedEmployee.id);
+    } else if (employees.length > 0) {
+      setEmployeeId((prev) => prev || employees[0].id);
+    }
+    // Reset provider fields on re-open
+    setRepoUrl('');
+    setSelectedDriveFolder('');
+    setDriveAuthorized(false);
+    setSelectedNotionPage('');
+    setNotionAuthorized(false);
+    setJiraProjectCode('');
+    setSubmitError(null);
+
+    // Fetch centralized Jira workspace status
+    setLoadingJiraWorkspace(true);
+    getJiraWorkspaceStatus()
+      .then((data) => {
+        setJiraWorkspace(data);
+        if (data?.available_projects?.length) {
+          setJiraProjectCode(data.available_projects[0].key);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingJiraWorkspace(false));
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!isOpen) return null;
 
-  const currentEmp = employees.find((e) => e.id === employeeId) || employees[0];
-  const currentProj = projects.find((p) => p.id === projectId) || projects[0];
+  // The resolved project for the current selection (null if employee has none)
+  const currentProj = employeeProjects.find((p) => p.id === projectId) || null;
+
+  const handleEmployeeChange = (newEmpId: string) => {
+    setEmployeeId(newEmpId);
+    // projectId reset is handled by the useEffect watching employeeId
+  };
 
   const handleConnectGithub = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -321,15 +385,16 @@ export const ConnectResourceModal: React.FC<ConnectResourceModalProps> = ({
 
         {/* Content Body */}
         <div className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
-          {/* Common Employee & Project selectors */}
+          {/* Employee & Project selectors */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 rounded border border-slate-200">
+            {/* Employee selector */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                 Associate with Employee:
               </label>
               <select
                 value={employeeId}
-                onChange={(e) => setEmployeeId(e.target.value)}
+                onChange={(e) => handleEmployeeChange(e.target.value)}
                 className="w-full bg-white border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none"
               >
                 {employees.map((emp) => (
@@ -340,21 +405,33 @@ export const ConnectResourceModal: React.FC<ConnectResourceModalProps> = ({
               </select>
             </div>
 
+            {/* Project selector — filtered to the selected employee's assignments */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                 Primary Project:
               </label>
-              <select
-                value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none"
-              >
-                {projects.map((proj) => (
-                  <option key={proj.id} value={proj.id}>
-                    {proj.name} ({proj.code})
-                  </option>
-                ))}
-              </select>
+              {employeeProjects.length === 0 ? (
+                <div className="flex items-start gap-2 p-2 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
+                  <span>
+                    {currentEmp
+                      ? `No projects assigned to ${currentEmp.name}. Assign a project first.`
+                      : 'Select an employee to see their assigned projects.'}
+                  </span>
+                </div>
+              ) : (
+                <select
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded px-2.5 py-1.5 text-xs text-slate-900 focus:outline-none"
+                >
+                  {employeeProjects.map((proj) => (
+                    <option key={proj.id} value={proj.id}>
+                      {proj.name} ({proj.code})
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
 
@@ -429,7 +506,7 @@ export const ConnectResourceModal: React.FC<ConnectResourceModalProps> = ({
               {!driveAuthorized ? (
                 <div className="p-4 border border-dashed border-slate-300 rounded text-center space-y-3 bg-slate-50">
                   <div className="text-xs font-semibold text-slate-800">
-                    Authorize Google Drive for {currentEmp.name}
+                    Authorize Google Drive for {currentEmp?.name ?? '—'}
                   </div>
                   <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
                     A limited OAuth scope allows selecting a single folder. Entire Drive access is never granted.
@@ -456,7 +533,7 @@ export const ConnectResourceModal: React.FC<ConnectResourceModalProps> = ({
                 <div className="space-y-3">
                   <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded text-[11px] text-emerald-900 flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>OAuth authorization successful for {currentEmp.email}</span>
+                    <span>OAuth authorization successful for {currentEmp?.email}</span>
                   </div>
 
                   <div>
@@ -515,7 +592,7 @@ export const ConnectResourceModal: React.FC<ConnectResourceModalProps> = ({
               {!notionAuthorized ? (
                 <div className="p-4 border border-dashed border-slate-300 rounded text-center space-y-3 bg-slate-50">
                   <div className="text-xs font-semibold text-slate-800">
-                    Authorize Notion for {currentEmp.name}
+                    Authorize Notion for {currentEmp?.name ?? '—'}
                   </div>
                   <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
                     Select the specific workspace pages you want Continuum to index for semantic search.
@@ -585,72 +662,124 @@ export const ConnectResourceModal: React.FC<ConnectResourceModalProps> = ({
             </div>
           )}
 
-          {/* JIRA FLOW */}
+          {/* JIRA FLOW (ADMINISTRATOR-MANAGED CENTRAL WORKSPACE) */}
           {selectedProvider === 'jira' && (
             <div className="space-y-4">
               <div className="space-y-1">
                 <div className="font-semibold text-slate-900 flex items-center gap-2">
                   <Layers className="w-4 h-4 text-blue-600" />
-                  <span>Company-Level Jira Workspace Connection</span>
+                  <span>Centralized Jira Workspace Resource</span>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Connect Jira workspace projects to index issue keys, epics, and work items into knowledge continuity graphs.
+                  Select a Jira project from your organization's centrally managed workspace to index tasks and attribute continuity knowledge.
                 </p>
               </div>
 
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">
-                  Jira Project Code or Project URL:
-                </label>
-                <input
-                  type="text"
-                  value={jiraProjectCode}
-                  onChange={(e) => setJiraProjectCode(e.target.value)}
-                  placeholder="https://company.atlassian.net/jira/projects/PAY or PAY"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-900 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:bg-white"
-                />
-              </div>
-
-              <div className="p-3.5 bg-slate-50 rounded border border-slate-200 space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500 font-medium">Workspace Status:</span>
-                  <span className="font-semibold text-emerald-700 flex items-center gap-1 font-mono text-[11px]">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    🟢 Connected
-                  </span>
+              {loadingJiraWorkspace ? (
+                <div className="p-6 text-center text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded">
+                  <RefreshCw className="w-4 h-4 animate-spin text-blue-600 mx-auto mb-2" />
+                  <span>Loading centralized Jira workspace status...</span>
                 </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500 font-medium">Workspace:</span>
-                  <span className="font-semibold text-slate-800">Company Jira Workspace</span>
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-500 font-medium">Mapped Resource Target:</span>
-                  <span className="font-semibold text-slate-800">{jiraProjectCode}</span>
-                </div>
-              </div>
+              ) : jiraWorkspace?.connected ? (
+                <div className="space-y-3">
+                  {/* Central Workspace Identity Card */}
+                  <div className="p-3 bg-blue-50/70 border border-blue-200 rounded text-xs space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-blue-900 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Centralized Workspace Verified</span>
+                      </span>
+                      <span className="font-mono text-[10px] text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">
+                        Admin-Managed
+                      </span>
+                    </div>
+                    <div className="font-mono text-[11px] text-blue-950 font-semibold">
+                      {jiraWorkspace.workspace_url || 'https://continuum.atlassian.net'}
+                    </div>
+                    <p className="text-[10px] text-blue-800">
+                      Employees do not configure individual credentials. Jira is authenticated centrally by the Continuum administrator.
+                    </p>
+                  </div>
 
-              <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded text-[11px] text-indigo-900">
-                Registering will save this project knowledge source into Supabase PostgreSQL and associate it with {currentEmp.name}.
-              </div>
+                  {/* Project Selection */}
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      Select Jira Project to Attribute:
+                    </label>
+                    {jiraWorkspace.available_projects && jiraWorkspace.available_projects.length > 0 ? (
+                      <select
+                        value={jiraProjectCode}
+                        onChange={(e) => setJiraProjectCode(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:bg-white cursor-pointer"
+                      >
+                        {jiraWorkspace.available_projects.map((jp) => (
+                          <option key={jp.id || jp.key} value={jp.key}>
+                            {jp.name} ({jp.key})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={jiraProjectCode}
+                        onChange={(e) => setJiraProjectCode(e.target.value)}
+                        placeholder="e.g. PAY or https://company.atlassian.net/jira/projects/PAY"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded text-xs text-slate-900 font-mono text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-600 focus:bg-white"
+                      />
+                    )}
+                  </div>
 
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-3.5 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded border border-slate-200"
-                >
-                  Close
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSyncJira}
-                  disabled={isSyncingJira || !jiraProjectCode.trim()}
-                  className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded transition-colors shadow-xs inline-flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingJira ? 'animate-spin' : ''}`} />
-                  <span>{isSyncingJira ? 'Registering...' : 'Register Jira Source'}</span>
-                </button>
-              </div>
+                  {/* Attribution Summary */}
+                  <div className="p-3 bg-slate-50 rounded border border-slate-200 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Knowledge Owner / Contributor:</span>
+                      <strong className="text-slate-900">{currentEmp?.name ?? '—'}</strong>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500">Attributed Continuum Project:</span>
+                      <strong className="text-slate-900">{currentProj?.name ?? 'General'}</strong>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="px-3.5 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded border border-slate-200"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSyncJira}
+                      disabled={isSyncingJira || !jiraProjectCode.trim()}
+                      className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded transition-colors shadow-xs inline-flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isSyncingJira ? 'animate-spin' : ''}`} />
+                      <span>{isSyncingJira ? 'Connecting & Indexing...' : 'Connect Jira Project'}</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-5 border border-dashed border-amber-300 bg-amber-50 rounded-lg text-center space-y-3">
+                  <AlertCircle className="w-8 h-8 text-amber-600 mx-auto" />
+                  <div>
+                    <h3 className="font-semibold text-amber-900 text-xs">Jira Workspace Not Configured</h3>
+                    <p className="text-[11px] text-amber-800 mt-1 max-w-sm mx-auto">
+                      Jira workspace authentication must be configured centrally by an authorized administrator before projects can be mapped to employees.
+                    </p>
+                  </div>
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="px-3.5 py-1.5 text-xs font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded transition-colors"
+                    >
+                      Close and Configure in Connections
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

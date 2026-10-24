@@ -24,7 +24,7 @@ def parse_source_input(source_type: str, url: Optional[str], external_id: Option
     Normalize and validate resource input based on source type.
     Returns: (normalized_provider, resource_type, external_resource_id)
     """
-    st = source_type.upper().replace("-", "_")
+    st = source_type.upper().replace("-", "_").replace(" ", "_")
     if st in ["GITHUB", "GIT"]:
         prov = "GITHUB"
         res_type = "REPOSITORY"
@@ -37,7 +37,7 @@ def parse_source_input(source_type: str, url: Optional[str], external_id: Option
             raise BadRequestException(f"Invalid GitHub URL or repository format: {e}")
         ext_id = f"{owner}/{repo}"
         norm_url = f"https://github.com/{owner}/{repo}"
-    elif st in ["GOOGLE_DRIVE", "GOOGLEDRIVE", "GDRIVE", "DRIVE"]:
+    elif st in ["GOOGLE_DRIVE", "GOOGLEDRIVE", "GDRIVE", "DRIVE", "GOOGLE"]:
         prov = "GOOGLE_DRIVE"
         res_type = "FOLDER"
         target = external_id or url
@@ -204,7 +204,7 @@ async def register_source(
 
     # Trigger automatic sync in background if source is ready and not in test environment
     if init_status == "READY" and settings.ENVIRONMENT != "testing":
-        background_tasks.add_task(resource_service.sync_resource, resource.id, db)
+        background_tasks.add_task(resource_service.sync_resource_background, resource.id)
 
     logger.info(f"Administrator {current_admin.email} registered new {prov} source: {resource.name} ({ext_id})")
     return await format_source_out(resource, db)
@@ -282,7 +282,7 @@ async def sync_source(
     Trigger manual knowledge synchronization for a registered source.
     """
     res = await resource_service.get_resource(source_id, db)
-    background_tasks.add_task(resource_service.sync_resource, source_id, db)
+    background_tasks.add_task(resource_service.sync_resource_background, source_id)
     return SourceSyncResponse(
         source_id=source_id,
         status="SYNCING",

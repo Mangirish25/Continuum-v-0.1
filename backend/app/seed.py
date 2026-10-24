@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.db.database import AsyncSessionLocal, engine, Base
-from app.db.models.all_models import Admin, Employee, Project, EmployeeResource, KnowledgeDocument, RiskScore
-from app.core.security import get_password_hash
+from app.db.models.all_models import Admin, Employee, Project, EmployeeResource, KnowledgeDocument, RiskScore, OAuthConnection
+from app.core.security import get_password_hash, encrypt_token
 from app.services.risk_service import risk_service
 from app.knowledge.pipeline import ingestion_pipeline
 from app.core.logging import logger
@@ -74,7 +74,18 @@ async def seed_data():
             jira_account_id="jira_akash_04"
         )
 
-        session.add_all([rahul, priya, aditi, akash])
+        shivay = Employee(
+            id="emp_shivay",
+            name="Shivay Oberoi",
+            email="shivay.oberoi@company.com",
+            role="Senior Backend Developer",
+            team="Engineering",
+            status="ACTIVE",
+            skills=["FastAPI", "Python", "PostgreSQL", "Payment Gateway Architecture", "Distributed Systems"],
+            jira_account_id="jira_shivay_05"
+        )
+
+        session.add_all([rahul, priya, aditi, akash, shivay])
         await session.flush()
 
         # 3. Projects
@@ -106,7 +117,7 @@ async def seed_data():
             status="ACTIVE"
         )
 
-        p_pay.employees = [rahul, priya]
+        p_pay.employees = [rahul, priya, shivay]
         p_auth.employees = [priya, aditi]
         p_analytics.employees = [aditi, akash]
         p_infra.employees = [akash, priya]
@@ -114,7 +125,19 @@ async def seed_data():
         session.add_all([p_pay, p_auth, p_analytics, p_infra])
         await session.flush()
 
-        # 4. Resources
+        # 4. Centralized Jira OAuth Connection (Administrator-Managed)
+        jira_central = OAuthConnection(
+            id="oauth_jira_central",
+            provider="JIRA",
+            connection_type="ADMIN",
+            access_token_encrypted=encrypt_token("mock_jira_admin_token"),
+            provider_account_id="https://continuum.atlassian.net",
+            scopes=["read:jira-work", "admin_email:admin@continuum.io", "verified:true"]
+        )
+        session.add(jira_central)
+        await session.flush()
+
+        # 5. Resources
         res_github = EmployeeResource(
             id="res_gh_pay",
             employee_id=rahul.id,
@@ -136,6 +159,18 @@ async def seed_data():
             external_resource_id="folder_gdrive_payments",
             external_url="https://drive.google.com/drive/folders/folder_gdrive_payments",
             name="Payment Architecture & Runbooks",
+            status="CONNECTED"
+        )
+
+        res_gdrive_shivay = EmployeeResource(
+            id="res_gd_shivay",
+            employee_id=shivay.id,
+            project_id=p_pay.id,
+            provider="GOOGLE_DRIVE",
+            resource_type="FOLDER",
+            external_resource_id="folder_gdrive_architecture",
+            external_url="https://drive.google.com/drive/folders/folder_gdrive_architecture",
+            name="Architecture & Engineering Docs",
             status="CONNECTED"
         )
 
@@ -163,15 +198,29 @@ async def seed_data():
             status="CONNECTED"
         )
 
-        session.add_all([res_github, res_gdrive, res_notion, res_jira])
+        res_jira_shivay = EmployeeResource(
+            id="res_ji_shivay",
+            employee_id=shivay.id,
+            project_id=p_pay.id,
+            provider="JIRA",
+            resource_type="PROJECT_ISSUES",
+            external_resource_id="PAY",
+            external_url="https://continuum.atlassian.net/browse/PAY",
+            name="Jira - Backend Services Tasks",
+            status="CONNECTED"
+        )
+
+        session.add_all([res_github, res_gdrive, res_gdrive_shivay, res_notion, res_jira, res_jira_shivay])
         await session.commit()
 
-        # 5. Run Ingestion Pipeline on Resources
+        # 6. Run Ingestion Pipeline on Resources
         logger.info("Synchronizing and indexing knowledge documents for seed resources...")
         await ingestion_pipeline.run_sync_for_resource(res_github.id, session)
         await ingestion_pipeline.run_sync_for_resource(res_gdrive.id, session)
+        await ingestion_pipeline.run_sync_for_resource(res_gdrive_shivay.id, session)
         await ingestion_pipeline.run_sync_for_resource(res_notion.id, session)
         await ingestion_pipeline.run_sync_for_resource(res_jira.id, session)
+        await ingestion_pipeline.run_sync_for_resource(res_jira_shivay.id, session)
 
         # 6. Calculate Risk Scores
         logger.info("Calculating risk scores and bus factors for projects...")

@@ -49,7 +49,10 @@ export interface Employee {
   avatar: string;
   initials: string;
   projectsCount: number;
+  /** Display names of assigned projects — for UI rendering only. */
   projects: string[];
+  /** Stable IDs of assigned projects — use these for filtering, not names. */
+  projectIds: string[];
   connectedSourcesCount: number;
   knowledgeScore: number; // e.g. 82%
   risk: RiskLevel;

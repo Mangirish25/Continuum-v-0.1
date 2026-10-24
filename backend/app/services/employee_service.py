@@ -110,6 +110,13 @@ class EmployeeService:
         if not emp:
             raise NotFoundException(f"Employee {employee_id} not found.")
 
+        # Guard against duplicate email collision with a DIFFERENT employee
+        if data.email is not None and data.email != emp.email:
+            dup_stmt = select(Employee).where(Employee.email == data.email, Employee.id != employee_id)
+            dup = (await db.execute(dup_stmt)).scalar_one_or_none()
+            if dup:
+                raise ConflictException(f"Email '{data.email}' is already in use by another employee.")
+
         if data.name is not None:
             emp.name = data.name
         if data.email is not None:
