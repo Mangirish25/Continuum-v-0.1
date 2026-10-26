@@ -85,13 +85,12 @@ export const KnowledgeSearchScreen: React.FC<KnowledgeSearchScreenProps> = ({
     switch (provider.toUpperCase()) {
       case 'GOOGLE_DRIVE':
       case 'GOOGLEDRIVE':
-        return 'Google Drive';
+      case 'DRIVE':
+        return 'Drive';
       case 'GITHUB':
         return 'GitHub';
       case 'NOTION':
         return 'Notion';
-      case 'JIRA':
-        return 'Jira';
       default:
         return provider || 'Indexed Document';
     }
@@ -105,7 +104,7 @@ export const KnowledgeSearchScreen: React.FC<KnowledgeSearchScreenProps> = ({
           Search Company Knowledge
         </h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Semantic neural search and employee attribution across connected Google Drive folders, Jira tasks, GitHub repos, and Notion specs.
+          Semantic search across explicitly connected Drive and Notion folders, plus existing GitHub knowledge.
         </p>
       </div>
 
@@ -153,8 +152,8 @@ export const KnowledgeSearchScreen: React.FC<KnowledgeSearchScreenProps> = ({
               className="bg-white border border-slate-200 rounded px-2 py-1 text-slate-700 text-xs focus:outline-none cursor-pointer"
             >
               <option value="all">All Sources</option>
-              <option value="google_drive">Google Drive</option>
-              <option value="jira">Jira</option>
+              <option value="drive">Drive</option>
+              <option value="google_drive">Legacy Google Drive</option>
               <option value="github">GitHub</option>
               <option value="notion">Notion</option>
             </select>

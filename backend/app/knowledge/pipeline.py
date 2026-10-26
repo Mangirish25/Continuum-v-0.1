@@ -5,17 +5,14 @@ from sqlalchemy import select, delete
 
 from app.integrations.base import BaseConnector, NormalizedDocument
 from app.integrations.github import GitHubConnector
-from app.integrations.google_drive import GoogleDriveConnector
-from app.integrations.notion import NotionConnector
-from app.integrations.jira import JiraConnector
+from app.integrations.local_folder import LocalFolderConnector
 
 from app.knowledge.normalization import compute_content_hash, normalize_text_content
 from app.knowledge.chunking import DocumentChunker
 from app.knowledge.embeddings import embedding_service
 from app.knowledge.vector_store import vector_store_service
 
-from app.db.models.all_models import EmployeeResource, KnowledgeDocument, KnowledgeChunk, OAuthConnection, Employee, Project
-from app.core.security import decrypt_token
+from app.db.models.all_models import EmployeeResource, KnowledgeDocument, KnowledgeChunk, Employee, Project
 from app.core.logging import logger
 
 class IngestionPipeline:
@@ -33,34 +30,8 @@ class IngestionPipeline:
         provider_upper = resource.provider.upper()
         if provider_upper == "GITHUB":
             return GitHubConnector()
-        elif provider_upper in ["GOOGLE_DRIVE", "GOOGLEDRIVE", "GDRIVE"]:
-            token = access_token
-            if not token:
-                conn_stmt = select(OAuthConnection).where(
-                    OAuthConnection.provider.in_(["GOOGLE_DRIVE", "GOOGLE"])
-                )
-                conn = (await db.execute(conn_stmt)).scalar_one_or_none()
-                if conn and conn.access_token_encrypted:
-                    token = decrypt_token(conn.access_token_encrypted)
-            return GoogleDriveConnector(access_token=token)
-        elif provider_upper == "NOTION":
-            token = access_token
-            if not token:
-                conn_stmt = select(OAuthConnection).where(OAuthConnection.provider == "NOTION")
-                conn = (await db.execute(conn_stmt)).scalar_one_or_none()
-                if conn and conn.access_token_encrypted:
-                    token = decrypt_token(conn.access_token_encrypted)
-            return NotionConnector(access_token=token)
-        elif provider_upper in ["JIRA", "ATLASSIAN"]:
-            token = access_token
-            site_url = None
-            conn_stmt = select(OAuthConnection).where(OAuthConnection.provider == "JIRA")
-            conn = (await db.execute(conn_stmt)).scalar_one_or_none()
-            if conn:
-                if conn.access_token_encrypted:
-                    token = decrypt_token(conn.access_token_encrypted) or token
-                site_url = conn.provider_account_id
-            return JiraConnector(access_token=token, site_url=site_url)
+        elif provider_upper in ["DRIVE", "GOOGLE_DRIVE", "GOOGLEDRIVE", "GDRIVE", "NOTION"]:
+            return LocalFolderConnector("DRIVE" if provider_upper != "NOTION" else "NOTION")
         else:
             raise ValueError(f"Unsupported provider connector: {resource.provider}")
 
@@ -68,12 +39,8 @@ class IngestionPipeline:
         provider_upper = provider.upper()
         if provider_upper == "GITHUB":
             return GitHubConnector()
-        elif provider_upper in ["GOOGLE_DRIVE", "GOOGLEDRIVE", "GDRIVE"]:
-            return GoogleDriveConnector(access_token=access_token)
-        elif provider_upper == "NOTION":
-            return NotionConnector(access_token=access_token)
-        elif provider_upper in ["JIRA", "ATLASSIAN"]:
-            return JiraConnector(access_token=access_token)
+        elif provider_upper in ["DRIVE", "GOOGLE_DRIVE", "GOOGLEDRIVE", "GDRIVE", "NOTION"]:
+            return LocalFolderConnector("DRIVE" if provider_upper != "NOTION" else "NOTION")
         else:
             raise ValueError(f"Unsupported provider connector: {provider}")
 
@@ -90,6 +57,8 @@ class IngestionPipeline:
 
         if not resource:
             raise ValueError(f"Resource with ID {resource_id} not found")
+        if resource.status == "DISABLED":
+            raise ValueError(f"Resource with ID {resource_id} is disabled")
 
         resource.status = "SYNCING"
         resource.last_sync_error = None
@@ -124,8 +93,10 @@ class IngestionPipeline:
 
             processed_count = 0
             unchanged_count = 0
+            indexed_paths = set()
 
             for nd in norm_docs:
+                indexed_paths.add(nd.external_id)
                 clean_content = normalize_text_content(nd.content)
                 content_hash = compute_content_hash(clean_content)
 
@@ -140,6 +111,9 @@ class IngestionPipeline:
                 if existing_doc and existing_doc.content_hash == content_hash:
                     # Content unchanged, update last_synced_at only
                     existing_doc.last_synced_at = datetime.now(timezone.utc)
+                    existing_doc.title = nd.title
+                    existing_doc.source_url = nd.source_url
+                    existing_doc.doc_metadata = nd.doc_metadata
                     unchanged_count += 1
                     continue
 
@@ -178,6 +152,7 @@ class IngestionPipeline:
                 base_meta = {
                     "document_id": doc_obj.id,
                     "resource_id": resource.id,
+                    "connection_id": resource.id,
                     "employee_id": doc_obj.employee_id or "",
                     "employee_name": emp_name or "",
                     "project_id": doc_obj.project_id or "",
@@ -187,6 +162,11 @@ class IngestionPipeline:
                     "source_url": doc_obj.source_url or "",
                     "knowledge_type": nd.doc_metadata.get("knowledge_type", "general")
                 }
+                base_meta.update({
+                    key: nd.doc_metadata[key]
+                    for key in ("file_name", "relative_path", "file_size", "modified_at", "source_type")
+                    if key in nd.doc_metadata
+                })
                 chunks = self.chunker.chunk_document(clean_content, base_meta)
 
                 if chunks:
@@ -225,9 +205,26 @@ class IngestionPipeline:
 
                 processed_count += 1
 
-            resource.status = "SYNCED"
+            # Remove stale vector/relational data for files that have disappeared from a local folder.
+            if isinstance(connector, LocalFolderConnector):
+                if not connector.walk_errors:
+                    known_paths = indexed_paths | connector.failed_paths
+                    previous_stmt = select(KnowledgeDocument).where(KnowledgeDocument.resource_id == resource.id)
+                    previous_docs = (await db.execute(previous_stmt)).scalars().all()
+                    for previous_doc in previous_docs:
+                        if previous_doc.external_id not in known_paths:
+                            self.vector_store.delete_by_document(previous_doc.id)
+                            await db.delete(previous_doc)
+
+            scan_errors = connector.scan_errors if isinstance(connector, LocalFolderConnector) else []
+            resource.status = "PARTIAL" if scan_errors else "SYNCED"
             resource.last_synced_at = datetime.now(timezone.utc)
             resource.last_successful_sync_at = datetime.now(timezone.utc)
+            resource.last_sync_error = (
+                f"{len(scan_errors)} document(s) could not be indexed: " + "; ".join(
+                    f"{error['path']}: {error['error']}" for error in scan_errors[:5]
+                )
+            ) if scan_errors else None
             res_meta = dict(resource.resource_metadata or {})
             res_meta["indexed_documents_count"] = processed_count
             resource.resource_metadata = res_meta
@@ -236,9 +233,10 @@ class IngestionPipeline:
             logger.info(f"Sync completed for resource '{resource.name}' ({resource.id}): {processed_count} processed, {unchanged_count} unchanged")
             return {
                 "resource_id": resource.id,
-                "status": "SYNCED",
+                "status": resource.status,
                 "processed_documents": processed_count,
-                "unchanged_documents": unchanged_count
+                "unchanged_documents": unchanged_count,
+                "failed_documents": len(scan_errors),
             }
 
         except Exception as e:

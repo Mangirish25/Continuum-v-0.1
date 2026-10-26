@@ -5,13 +5,13 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.exceptions import ContinuumException
 from app.core.logging import logger
-from app.db.database import engine, AsyncSessionLocal
+from app.db.database import engine, AsyncSessionLocal, upgrade_existing_sqlite_schema
 from app.db.models.all_models import Base, Admin
 from app.core.security import get_password_hash
 from sqlalchemy import select
 
 from app.api.routes import (
-    auth, employees, projects, connections,
+    auth, employees, projects,
     resources, sources, knowledge, risk, handovers,
     dashboard, notifications, health
 )
@@ -55,7 +55,6 @@ app.include_router(health.router)
 app.include_router(auth.router, prefix=v1)
 app.include_router(employees.router, prefix=v1)
 app.include_router(projects.router, prefix=v1)
-app.include_router(connections.router, prefix=v1)
 app.include_router(resources.router, prefix=v1)
 app.include_router(sources.router, prefix=v1)
 app.include_router(knowledge.router, prefix=v1)
@@ -68,6 +67,7 @@ app.include_router(notifications.router, prefix=v1)
 async def on_startup():
     logger.info("Initializing database tables and admin seed...")
     async with engine.begin() as conn:
+        await conn.run_sync(upgrade_existing_sqlite_schema)
         await conn.run_sync(Base.metadata.create_all)
 
     # Ensure Initial Admin user exists

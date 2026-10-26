@@ -1,11 +1,48 @@
 from typing import AsyncGenerator
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base, sessionmaker
 from app.core.config import settings
 
 # Base class for ORM models
 Base = declarative_base()
+
+
+def upgrade_existing_sqlite_schema(connection) -> None:
+    """Add model fields introduced after the repository's existing SQLite snapshot."""
+    if connection.dialect.name != "sqlite":
+        return
+
+    existing_tables = {
+        row[0] for row in connection.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    additions = {
+        "admins": {
+            "is_active": "BOOLEAN NOT NULL DEFAULT 1",
+            "role": "VARCHAR NOT NULL DEFAULT 'admin'",
+            "supabase_user_id": "VARCHAR",
+        },
+        "employee_resources": {
+            "last_successful_sync_at": "DATETIME",
+        },
+        "handovers": {
+            "reversed_at": "DATETIME",
+            "reversal_reason": "TEXT",
+        },
+    }
+    for table_name, columns in additions.items():
+        if table_name not in existing_tables:
+            continue
+        current_columns = {
+            row[1] for row in connection.exec_driver_sql(f'PRAGMA table_info("{table_name}")').fetchall()
+        }
+        for column_name, definition in columns.items():
+            if column_name not in current_columns:
+                connection.exec_driver_sql(
+                    f'ALTER TABLE "{table_name}" ADD COLUMN "{column_name}" {definition}'
+                )
 
 # Configure database URLs
 import os
@@ -21,8 +58,13 @@ if "sqlite" in db_url:
         if not os.path.isabs(path_part):
             backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
             abs_db_file = os.path.join(backend_dir, path_part).replace("\\", "/")
+            os.makedirs(os.path.dirname(abs_db_file), exist_ok=True)
             db_url = f"sqlite+aiosqlite:///{abs_db_file}"
             sync_db_url = f"sqlite:///{abs_db_file}"
+    elif "sqlite" in db_url and ":memory:" not in db_url:
+        path_part = db_url.split("sqlite+aiosqlite:///", 1)[-1].split("sqlite:///", 1)[-1]
+        if os.path.isabs(path_part):
+            os.makedirs(os.path.dirname(path_part), exist_ok=True)
 
     async_db_url = db_url if "sqlite+aiosqlite" in db_url else db_url.replace("sqlite://", "sqlite+aiosqlite://")
     engine = create_async_engine(async_db_url, connect_args={"check_same_thread": False})
@@ -52,6 +94,19 @@ else:
         connect_args=async_connect_args
     )
     sync_engine = create_engine(sync_db_url, echo=False, pool_pre_ping=True)
+
+if "sqlite" in db_url:
+    @event.listens_for(engine.sync_engine, "connect")
+    def enable_async_sqlite_foreign_keys(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    @event.listens_for(sync_engine, "connect")
+    def enable_sync_sqlite_foreign_keys(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

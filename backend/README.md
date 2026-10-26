@@ -1,239 +1,74 @@
-# Continuum v0.1 — Enterprise Knowledge Continuity Platform
+# Continuum backend
 
-Continuum is an **Admin-Only Enterprise Knowledge Continuity Platform** designed to preserve institutional knowledge, analyze continuity risks, compute project bus factors, index multi-source organizational knowledge (GitHub, Google Drive, Notion, Jira), provide grounded semantic search, and synthesize structured handovers for departing employees.
+Continuum's FastAPI backend stores operational records in SQLAlchemy models backed by SQLite. The application initializes tables on startup and creates the configured initial administrator only when that account does not already exist. Existing database records are preserved during startup schema upgrades. The default database is the existing repository-root `continuum_local.db`; set `DATABASE_URL` to another SQLite URL to change its location. SQLite foreign-key enforcement is enabled.
 
----
+The existing relational entities remain in the ORM: admins, employees, projects, employee-project assignments, employee resources, indexed documents and chunks, risk scores, handovers, and handover audit logs. Employee and project creation only changes database records; it does not create or rename filesystem folders. Supabase Auth remains an optional administrator identity provider for existing installations. Supabase is not used for relational data. With the optional Supabase Auth environment values omitted, the backend uses its local administrator login.
 
-## 1. Product Context & Core Constraints
+## Local folder connections
 
-### Strict Administrator-Only Architecture
-- **Only Company Administrators authenticate into Continuum.**
-- Employees do **NOT** have user accounts, login dashboards, or self-service portals.
-- Employees are records in the database representing knowledge contributors, project assignments, and continuity risks.
-- Supabase Auth is strictly utilized for **Administrator Identity Verification**. Non-admin registrations or general public access are blocked.
+The employee-level **Add Connection** form accepts a Drive or Notion source, connection name, and an explicit local path. Relative paths resolve from the repository root and must resolve to an existing readable directory under the root `data/` directory. Absolute paths are accepted only when they resolve inside that same permitted data root. Missing folders, files, traversal paths, and symlinks resolving outside the root are rejected. The backend never creates employee, Drive, Notion, or document folders.
 
-### Local AI & Knowledge Processing Preservation
-- **LLM Processing**: Local Ollama running Qwen models (e.g. `qwen2.5:7b-instruct` or `qwen2.5-coder`). No paid or hosted LLM inference APIs are introduced.
-- **Embeddings**: Local SentenceTransformers (`all-MiniLM-L6-v2`) generating 384-dimensional dense vectors.
-- **Vector Storage**: Local ChromaDB persistence directory (`./data/chromadb`).
-- **Knowledge Pipeline**: Content hashing (SHA-256), duplicate detection, semantic chunking, and deterministic bus factor scoring are executed locally on the backend.
+Create the folders and place files manually, for example:
 
----
-
-## 2. Technology Stack
-
-- **Frontend**: React 18, TypeScript, Tailwind CSS, Lucide icons (Stitch-generated design system).
-- **Backend**: Python 3.12+ / FastAPI / Pydantic v2 / SQLAlchemy 2.0 (Async).
-- **Database & Auth**: Supabase PostgreSQL + Supabase Auth.
-- **Vector Database**: ChromaDB.
-- **Local AI**: Ollama + SentenceTransformers (`all-MiniLM-L6-v2`).
-- **Background Processing**: Celery + Redis (or FastAPI background tasks).
-- **External Connectors**: GitHub (REST API), Google Drive (OAuth2), Notion (OAuth2 / Integrations), Jira (OAuth2 / REST API).
-
----
-
-## 3. Architecture Overview
-
-```
-┌────────────────────────────────────────────────────────┐
-│             Stitch-Generated Frontend (React)          │
-│   - Supabase Auth Client (JWT Session Management)      │
-│   - Connections & Manual Source Registration Screen    │
-│   - Bus Factor, Risk Dashboard & Handover Review       │
-└───────────────────────────┬────────────────────────────┘
-                            │ Bearer <Supabase_JWT>
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│                   FastAPI Backend                      │
-│   - Server-Side Token Verification & Admin Role Guard  │
-│   - Manual Knowledge Source Management & Normalization │
-│   - Bus Factor & Continuity Risk Scoring Engine        │
-│   - Handover Generation Orchestrator                   │
-└───────┬───────────────────┬────────────────────┬───────┘
-        │                   │                    │
-        ▼                   ▼                    ▼
-┌──────────────┐    ┌──────────────┐     ┌──────────────┐
-│   Supabase   │    │   Local AI   │     │  Background  │
-│  PostgreSQL  │    │  - Ollama    │     │  - Celery    │
-│  - Admins    │    │  - MiniLM    │     │  - Redis     │
-│  - Employees │    │  - ChromaDB  │     └──────────────┘
-│  - Sources   │    └──────────────┘
-│  - Handovers │
-└──────────────┘
+```text
+data/
+└── employee_1/
+    ├── drive/
+    │   ├── meeting_notes.md
+    │   └── project_plan.pdf
+    └── notion/
+        └── technical_documentation.txt
 ```
 
----
+Enter paths such as `data/employee_1/drive` in the form. This layout is an example only; employees and folders are not hardcoded or required to exist. The local connector recursively reads `.txt`, `.md`, `.pdf`, `.json`, and `.csv` files. Unsupported, hidden, temporary, empty, or malformed files are skipped with indexing errors recorded on the connection. Reindexing detects changed and removed files.
 
-## 4. Setup Guide
+The existing chunking, `all-MiniLM-L6-v2` embeddings, Chroma vector store, retrieval, RAG, and handover services remain in use. Connection removal marks the connection disabled and clears its extracted text and searchable index while leaving the source directory and files untouched. Drive/Notion indexing does not use OAuth or call provider APIs. Jira is no longer a selectable knowledge connection. Public GitHub repository ingestion remains a separate non-OAuth feature.
 
-### 4.1 Creating a Supabase Project
-1. Log in to [Supabase](https://supabase.com) and create a new project (e.g., `continuum-platform`).
-2. Note your **Project URL** (e.g., `https://xyzcompany.supabase.co`) and **Publishable / Anon Key**.
-3. Under **Project Settings > API**, retrieve your **JWT Secret** and **Service Role Key** (for server-side administrative token verification).
-4. Under **Project Settings > Database**, find your connection string:
-   - **Transaction Pooler (Port 6543)**: Recommended for serverless or high-concurrency environments.
-   - **Direct Connection (Port 5432)**: Standard async PostgreSQL connection:
-     ```
-     postgresql+asyncpg://postgres.[project-ref]:[db-password]@aws-0-[region].pooler.supabase.com:6543/postgres
-     ```
+## Configuration
 
-### 4.2 Configuring Supabase Auth
-1. Go to **Authentication > Providers > Email**.
-2. Enable Email signup.
-3. For local development, you can disable "Confirm email" for immediate access, or keep it enabled for production staging.
-4. Set Redirect URLs under **Authentication > URL Configuration** to include your frontend origins (e.g., `http://localhost:5173`).
+Copy `backend/.env.example` to `backend/.env`. SQLite settings are provided by default. Supabase values are optional and apply only when preserving Supabase administrator login; they are not needed for SQLite CRUD or local folders. Do not configure Google Drive, Notion, or Jira OAuth credentials for this workflow.
 
-### 4.3 Administrator Registration & Authorization Modes
-Continuum supports two configurable registration modes in `.env`:
-- `ADMIN_REGISTRATION_MODE="open"`: For local development. Any administrator registering through the UI is automatically verified and provisioned in the application's PostgreSQL database.
-- `ADMIN_REGISTRATION_MODE="restricted"`: For staging and production. Administrator registration requires a valid `REGISTRATION_INVITE_CODE`. Requests without a matching code are rejected with `403 Forbidden`.
+Copy `frontend/.env.example` values into the repository-root `.env`; the Vite config reads frontend values from that root file. Supabase Auth values in the frontend example are optional.
 
-### 4.4 Configuring Environment Variables
-Copy `.env.example` in both `backend/` and project root:
+For local document access, the backend process must be able to read the repository's `data/` folder. An empty or missing `data/` directory is not created by the application; create it manually if needed.
 
-**Backend (`backend/.env`):**
-```env
-PROJECT_NAME="Continuum"
-ENVIRONMENT="development"
-DEBUG=true
-API_V1_STR="/api/v1"
-CORS_ORIGINS=["http://localhost:5173", "http://localhost:3000"]
+## Run locally
 
-# Supabase Auth & PostgreSQL
-SUPABASE_URL="https://your-project.supabase.co"
-SUPABASE_KEY="your-anon-publishable-key"
-SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
-SUPABASE_JWT_SECRET="your-jwt-secret-from-api-settings"
+Install Python dependencies and start the backend from its directory:
 
-# Supabase PostgreSQL Connection String (Asyncpg Driver)
-DATABASE_URL="postgresql+asyncpg://postgres.your-ref:your-db-password@aws-0-region.pooler.supabase.com:6543/postgres"
-SYNC_DATABASE_URL="postgresql://postgres.your-ref:your-db-password@aws-0-region.pooler.supabase.com:6543/postgres"
-
-# Administrator Registration Policy
-ADMIN_REGISTRATION_MODE="open"              # "open" or "restricted"
-REGISTRATION_INVITE_CODE="INVITE-2026-HQ"   # Required when mode is "restricted"
-
-# Local AI Configuration
-OLLAMA_BASE_URL="http://localhost:11434"
-OLLAMA_MODEL="qwen2.5:7b-instruct"
-EMBEDDING_MODEL_NAME="all-MiniLM-L6-v2"
-CHROMA_PERSIST_DIRECTORY="./data/chromadb"
-
-# Celery & Redis
-REDIS_URL="redis://localhost:6379/0"
-
-# External Integrations Encryption
-FERNET_KEY="generate-with-cryptography-fernet"
-```
-
-**Frontend (`.env` in workspace root):**
-```env
-VITE_API_BASE_URL="http://localhost:8000/api/v1"
-VITE_SUPABASE_URL="https://your-project.supabase.co"
-VITE_SUPABASE_ANON_KEY="your-anon-publishable-key"
-```
-
----
-
-## 5. Running the Application
-
-### 5.1 Applying Database Migrations to Supabase
-```bash
+```powershell
 cd backend
-# Activate virtual environment
-.\venv\Scripts\activate   # Windows
-source venv/bin/activate  # Linux/macOS
-
-# Apply latest Alembic schema migrations
-alembic upgrade head
+python -m venv .venv
+.venv\\Scripts\\Activate.ps1
 ```
 
-### 5.2 Starting Ollama and Embedding Model
-Ensure Ollama is installed and running locally:
-```bash
-ollama serve
-ollama pull qwen2.5:7b-instruct
-```
+On macOS/Linux, activate the environment with `source .venv/bin/activate`, then install dependencies and start the API:
 
-### 5.3 Starting FastAPI Backend
 ```bash
-cd backend
+pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
-Interactive API documentation: `http://localhost:8000/api/v1/docs`
 
-### 5.4 Starting Redis & Celery (Optional for background ingestion)
+In another terminal, run the frontend:
+
 ```bash
-# Start Redis
-redis-server
-
-# In backend directory, start Celery worker
-celery -A app.core.celery_app worker --loglevel=info
-```
-
-### 5.5 Starting Frontend
-```bash
+cd frontend
 npm install
 npm run dev
 ```
-Open `http://localhost:5173` in your browser.
 
----
+The frontend uses `http://localhost:3000`; API documentation is at `http://localhost:8000/api/v1/docs`. On a fresh database, the initial local administrator uses the values configured by `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD`. Existing accounts and passwords are preserved.
 
-## 6. Manual Knowledge Source Management
+## Docker Compose
 
-Administrators can manually register and manage knowledge sources directly from the **Connections** screen without editing `.env` or modifying source files:
+Create the root `data/` directory manually before starting Compose, then run `docker compose up --build`. Compose mounts that directory read-only at `/project/data` for the backend and worker, and stores SQLite in the persistent `continuum_db_data` volume. Redis, ChromaDB, and Ollama retain their existing service roles. No PostgreSQL service is required.
 
-1. Click **Connections** in the navigation bar.
-2. Click **+ Add Knowledge Source** or **+ Connect Resource**.
-3. Select your provider type and enter details:
-   - **GitHub**: Public Repository URL (e.g., `https://github.com/torvalds/linux`).
-   - **Google Drive**: Folder URL or Folder ID (e.g., `https://drive.google.com/drive/folders/xyz`).
-   - **Notion**: Page URL or Page ID (e.g., `https://notion.so/myorg/Architecture-Doc`).
-   - **Jira**: Project Key or Project URL (e.g., `PAY` or `https://org.atlassian.net/jira/projects/PAY`).
-4. Associate the source with an **Employee Knowledge Owner** and **Project**.
-5. Click **Connect / Register Source**.
-6. The source is stored in Supabase PostgreSQL with explicit state tracking:
-   - `READY`: Ready for indexing.
-   - `SYNCING`: Actively pulling and vectorizing documents.
-   - `SYNCED`: Up to date.
-   - `NEEDS_AUTH`: Missing authorized provider OAuth token.
-   - `FAILED`: Ingestion encountered an error (sanitized explanation displayed).
-   - `DISABLED`: Deactivated by administrator.
+## API and lifecycle
 
----
+- `POST /api/v1/sources`: validate and save an employee Drive/Notion folder connection, then queue indexing.
+- `GET /api/v1/sources`: list connection status, configured path, and indexing metadata.
+- `PATCH /api/v1/sources/{id}`: update a local folder path and queue indexing.
+- `POST /api/v1/sources/{id}/sync`: reindex a connected folder.
+- `DELETE /api/v1/sources/{id}`: deactivate the connection, clear its search index, and preserve files.
 
-## 7. Running the Automated Test Suite
-
-Continuum includes comprehensive tests covering authentication, administrator registration, restricted invitation checks, knowledge source endpoints, risk scoring, bus factors, and semantic search:
-
-```bash
-cd backend
-.\venv\Scripts\python.exe -m pytest -v
-```
-
-All 19 test suites run in an isolated in-memory test database with full verification of token claims and security barriers.
-
----
-
-## 8. Local Database to Supabase Migration Procedure
-
-If you have existing development data in a local PostgreSQL database that you wish to transfer to Supabase:
-
-1. **Export existing application data**:
-   ```bash
-   pg_dump -h localhost -U postgres -d continuum_dev --data-only --exclude-table=alembic_version -f backup_data.sql
-   ```
-2. **Apply migrations to Supabase**:
-   ```bash
-   alembic upgrade head
-   ```
-3. **Import data into Supabase PostgreSQL**:
-   ```bash
-   psql "postgresql://postgres.your-ref:password@aws-0-region.pooler.supabase.com:6543/postgres" -f backup_data.sql
-   ```
-4. **Link existing Admin records to Supabase Auth**:
-   If an existing admin registered in Supabase Auth has a user ID `supa_uid`, update the record:
-   ```sql
-   UPDATE admins SET supabase_user_id = '<supa_uid>' WHERE email = 'admin@continuum.io';
-   ```
+OAuth authorization and callback routes for knowledge providers are not registered. The existing Supabase Auth login integration remains optional and separate from SQLite persistence. Legacy OAuth token model fields are retained in the ORM for compatibility with existing SQLite files but are no longer read or written by active connection routes.

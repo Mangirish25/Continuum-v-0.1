@@ -83,7 +83,7 @@ export async function registerAdministrator(payload: {
     });
   }
 
-  // Otherwise, use backend registration endpoint which handles Supabase/PostgreSQL provisioning
+  // Otherwise, register and authenticate through the local backend.
   const res = await apiFetch('/auth/register', {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -167,6 +167,7 @@ export interface RegisteredSource {
   source_type: string;
   name: string;
   url?: string;
+  local_path?: string;
   external_resource_id: string;
   project_id?: string;
   project_name?: string;
@@ -191,6 +192,7 @@ export async function createSource(payload: {
   name: string;
   url?: string;
   external_resource_id?: string;
+  local_path?: string;
   project_id?: string;
   employee_id?: string;
   resource_metadata?: Record<string, any>;
@@ -203,6 +205,13 @@ export async function createSource(payload: {
 
 export async function syncSource(sourceId: string) {
   return apiFetch(`/sources/${sourceId}/sync`, { method: 'POST' });
+}
+
+export async function updateSource(sourceId: string, payload: { local_path: string }) {
+  return apiFetch<RegisteredSource>(`/sources/${sourceId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function deleteSource(sourceId: string, hardDelete = false) {
@@ -336,56 +345,6 @@ export async function searchKnowledge(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-}
-
-// Centralized Jira Management API Helpers
-export interface JiraWorkspaceStatusData {
-  connected: boolean;
-  verified: boolean;
-  workspace_url?: string;
-  admin_email?: string;
-  status: string;
-  error?: string;
-  last_synced_at?: string;
-  resources_count: number;
-  available_projects: Array<{
-    id: string;
-    key: string;
-    name: string;
-    projectTypeKey?: string;
-  }>;
-}
-
-export async function getJiraWorkspaceStatus(): Promise<JiraWorkspaceStatusData> {
-  return apiFetch<JiraWorkspaceStatusData>('/connections/jira');
-}
-
-export async function configureJiraWorkspace(payload: {
-  workspace_url: string;
-  admin_email?: string;
-  api_token: string;
-}): Promise<JiraWorkspaceStatusData> {
-  return apiFetch<JiraWorkspaceStatusData>('/connections/jira/configure', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function verifyJiraWorkspace(): Promise<{
-  verified: boolean;
-  status: string;
-  message: string;
-  workspace_url?: string;
-}> {
-  return apiFetch('/connections/jira/verify', { method: 'POST' });
-}
-
-export async function disconnectJiraWorkspace(): Promise<{ message: string; status: string }> {
-  return apiFetch('/connections/jira', { method: 'DELETE' });
-}
-
-export async function getJiraProjects(): Promise<Array<{ id: string; key: string; name: string }>> {
-  return apiFetch('/connections/jira/projects');
 }
 
 // Notifications API Helpers

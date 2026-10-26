@@ -1,23 +1,6 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: continuum_postgres
-    environment:
-      POSTGRES_DB: continuum_db
-      POSTGRES_USER: continuum
-      POSTGRES_PASSWORD: continuum_password
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U continuum -d continuum_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   redis:
     image: redis:7-alpine
     container_name: continuum_redis
@@ -53,15 +36,23 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
+    volumes:
+      - continuum_db_data:/app/storage
+      - type: bind
+        source: ./data
+        target: /project/data
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
-      - DATABASE_URL=postgresql+asyncpg://continuum:continuum_password@postgres:5432/continuum_db
-      - SYNC_DATABASE_URL=postgresql+psycopg2://continuum:continuum_password@postgres:5432/continuum_db
+      - DATABASE_URL=sqlite+aiosqlite:////app/storage/continuum.db
+      - SYNC_DATABASE_URL=sqlite:////app/storage/continuum.db
+      - PROJECT_ROOT=/project
+      - LOCAL_DATA_ROOT=/project/data
       - REDIS_URL=redis://redis:6379/0
       - CHROMA_URL=http://chromadb:8000
       - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -73,9 +64,19 @@ services:
     command: celery -A app.workers.celery_app worker --loglevel=info
     healthcheck:
       disable: true
+    volumes:
+      - continuum_db_data:/app/storage
+      - type: bind
+        source: ./data
+        target: /project/data
+        read_only: true
+        bind:
+          create_host_path: false
     environment:
-      - DATABASE_URL=postgresql+asyncpg://continuum:continuum_password@postgres:5432/continuum_db
-      - SYNC_DATABASE_URL=postgresql+psycopg2://continuum:continuum_password@postgres:5432/continuum_db
+      - DATABASE_URL=sqlite+aiosqlite:////app/storage/continuum.db
+      - SYNC_DATABASE_URL=sqlite:////app/storage/continuum.db
+      - PROJECT_ROOT=/project
+      - LOCAL_DATA_ROOT=/project/data
       - REDIS_URL=redis://redis:6379/0
       - CHROMA_URL=http://chromadb:8000
       - OLLAMA_BASE_URL=http://ollama:11434
@@ -84,6 +85,6 @@ services:
       - redis
 
 volumes:
-  postgres_data:
+  continuum_db_data:
   chroma_data:
   ollama_data:

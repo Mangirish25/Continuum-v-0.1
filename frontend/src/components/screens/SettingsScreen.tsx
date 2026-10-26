@@ -50,13 +50,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     (r) => r.sourceType.toLowerCase() === 'github'
   ).length;
   const driveCount = connectedResources.filter(
-    (r) => r.sourceType.toLowerCase() === 'googledrive' || r.sourceType.toLowerCase() === 'google_drive'
+    (r) => ['drive', 'googledrive', 'google_drive'].includes(r.sourceType.toLowerCase())
   ).length;
   const notionCount = connectedResources.filter(
     (r) => r.sourceType.toLowerCase() === 'notion'
-  ).length;
-  const jiraCount = connectedResources.filter(
-    (r) => r.sourceType.toLowerCase() === 'jira'
   ).length;
 
   const integrationCards = [
@@ -66,19 +63,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       connected: githubCount > 0,
     },
     {
-      name: 'Google Drive',
+      name: 'Drive',
       status: driveCount > 0 ? `${driveCount} Folders` : '0 Folders Connected',
       connected: driveCount > 0,
     },
     {
       name: 'Notion',
-      status: notionCount > 0 ? `${notionCount} Pages` : '0 Pages Connected',
+      status: notionCount > 0 ? `${notionCount} Folders` : '0 Folders Connected',
       connected: notionCount > 0,
-    },
-    {
-      name: 'Jira Workspace',
-      status: jiraCount > 0 ? `${jiraCount} Workspaces` : '0 Workspaces Connected',
-      connected: jiraCount > 0,
     },
   ];
 

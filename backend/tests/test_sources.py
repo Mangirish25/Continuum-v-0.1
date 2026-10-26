@@ -58,33 +58,26 @@ async def test_create_invalid_github_url(client: AsyncClient, auth_headers: dict
     assert "Invalid GitHub URL" in resp.json()["error"]["message"]
 
 @pytest.mark.asyncio
-async def test_create_google_drive_and_sync(client: AsyncClient, auth_headers: dict):
+async def test_drive_requires_an_explicit_local_path_and_employee(client: AsyncClient, auth_headers: dict):
     payload = {
         "source_type": "googledrive",
         "name": "Engineering Specs",
         "external_resource_id": "folder_spec_123"
     }
     resp = await client.post("/api/v1/sources", json=payload, headers=auth_headers)
-    assert resp.status_code == 201
-    source_id = resp.json()["id"]
-    assert resp.json()["status"] in ["NEEDS_AUTH", "READY"]
-
-    # Sync source
-    sync_resp = await client.post(f"/api/v1/sources/{source_id}/sync", headers=auth_headers)
-    assert sync_resp.status_code == 200
-    assert "status" in sync_resp.json()
+    assert resp.status_code == 400
+    assert "local_path" in resp.text
 
 @pytest.mark.asyncio
-async def test_create_notion_and_jira_sources(client: AsyncClient, auth_headers: dict):
-    # Notion
+async def test_notion_requires_an_explicit_local_path_and_jira_is_unsupported(client: AsyncClient, auth_headers: dict):
     notion_payload = {
         "source_type": "notion",
         "name": "Architecture RFC",
         "external_resource_id": "page_rfc_789"
     }
     notion_resp = await client.post("/api/v1/sources", json=notion_payload, headers=auth_headers)
-    assert notion_resp.status_code == 201
-    assert notion_resp.json()["source_type"] == "notion"
+    assert notion_resp.status_code == 400
+    assert "local_path" in notion_resp.text
 
     # Jira
     jira_payload = {
@@ -93,8 +86,8 @@ async def test_create_notion_and_jira_sources(client: AsyncClient, auth_headers:
         "external_resource_id": "PAY"
     }
     jira_resp = await client.post("/api/v1/sources", json=jira_payload, headers=auth_headers)
-    assert jira_resp.status_code == 201
-    assert jira_resp.json()["source_type"] == "jira"
+    assert jira_resp.status_code == 400
+    assert "Unsupported source type" in jira_resp.text
 
 @pytest.mark.asyncio
 async def test_delete_source(client: AsyncClient, auth_headers: dict):

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Optional, List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,17 +19,19 @@ class Settings(BaseSettings):
         "*"
     ]
     
-    # Database (Supabase PostgreSQL / Local PostgreSQL / SQLite fallback)
-    # For Supabase Pooler: postgresql+asyncpg://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?ssl=require
-    # Fallback to local SQLite when DATABASE_URL is not set or in offline testing
-    DATABASE_URL: str = "sqlite+aiosqlite:///continuum_local.db"
-    SYNC_DATABASE_URL: Optional[str] = "sqlite:///continuum_local.db"
-    
-    # Supabase Auth & Project
+    # Persistent local relational store. Relative SQLite URLs resolve under backend/.
+    DATABASE_URL: str = "sqlite+aiosqlite:///../continuum_local.db"
+    SYNC_DATABASE_URL: Optional[str] = "sqlite:///../continuum_local.db"
+
+    # Optional administrator identity provider retained for existing login setups.
     SUPABASE_URL: str = "https://placeholder-project.supabase.co"
     SUPABASE_KEY: str = "placeholder-anon-key"
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
     SUPABASE_JWT_SECRET: Optional[str] = None
+
+    # The local knowledge root is always constrained to this project data directory.
+    PROJECT_ROOT: Optional[str] = None
+    LOCAL_DATA_ROOT: Optional[str] = None
     
     # Administrator Registration Policy
     # "open" allows any user registering to become a Continuum admin during development.
@@ -40,23 +43,10 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "continuum-secret-key-change-in-production-32bytes-min!"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
-    TOKEN_ENCRYPTION_KEY: str = "c2VjcmV0LWtleS0zMi1ieXRlcy1mb3ItYWVzLWVuY3J5cHRpb24=" # 32 base64 bytes
+    TOKEN_ENCRYPTION_KEY: str = "c2VjcmV0LWtleS0zMi1ieXRlcy1mb3ItYWVzLWVuY3J5cHRpb24="
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
-    
-    # OAuth Integrations
-    GOOGLE_CLIENT_ID: str = "google-client-id-placeholder"
-    GOOGLE_CLIENT_SECRET: str = "google-client-secret-placeholder"
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/connections/google/callback"
-    
-    NOTION_CLIENT_ID: str = "notion-client-id-placeholder"
-    NOTION_CLIENT_SECRET: str = "notion-client-secret-placeholder"
-    NOTION_REDIRECT_URI: str = "http://localhost:8000/api/v1/connections/notion/callback"
-    
-    JIRA_CLIENT_ID: str = "jira-client-id-placeholder"
-    JIRA_CLIENT_SECRET: str = "jira-client-secret-placeholder"
-    JIRA_REDIRECT_URI: str = "http://localhost:8000/api/v1/connections/jira/callback"
     
     GITHUB_API_TOKEN: Optional[str] = None
     
@@ -68,6 +58,16 @@ class Settings(BaseSettings):
     # Vector Storage
     CHROMA_URL: Optional[str] = None # None for embedded local Chroma persistent storage
     CHROMA_PERSIST_DIR: str = "./chroma_data"
+
+    @property
+    def resolved_project_root(self) -> Path:
+        return Path(self.PROJECT_ROOT).expanduser().resolve() if self.PROJECT_ROOT else Path(__file__).resolve().parents[3]
+
+    @property
+    def resolved_local_data_root(self) -> Path:
+        if self.LOCAL_DATA_ROOT:
+            return Path(self.LOCAL_DATA_ROOT).expanduser().resolve()
+        return (self.resolved_project_root / "data").resolve()
 
     @property
     def resolved_chroma_dir(self) -> str:

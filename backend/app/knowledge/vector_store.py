@@ -158,8 +158,13 @@ class ChromaVectorStore(BaseVectorStore):
                 match = True
                 if where_filter:
                     for fk, fv in where_filter.items():
-                        if fv is not None and meta.get(fk) != fv:
-                            match = False
+                        if fv is None:
+                            continue
+                        if isinstance(fv, dict) and "$in" in fv:
+                            match = meta.get(fk) not in fv["$in"]
+                        else:
+                            match = meta.get(fk) != fv
+                        if match:
                             break
                 if match:
                     results.append({

@@ -14,7 +14,7 @@ export type ScreenId =
 
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low';
 
-export type SourceType = 'github' | 'googledrive' | 'notion' | 'jira';
+export type SourceType = 'github' | 'drive' | 'googledrive' | 'notion' | 'jira';
 
 export interface AdminUser {
   id?: string;

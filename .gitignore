@@ -22,6 +22,7 @@ env/
 *.db
 *.sqlite
 *.sqlite3
+data/
 chroma_data/
 
 Continuum-v-0.1/

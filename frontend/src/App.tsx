@@ -44,6 +44,7 @@ import {
   getHandovers,
   getNotifications,
   revertHandover,
+  deleteSource,
   updateEmployee,
   deleteEmployee,
   updateProject,
@@ -119,17 +120,20 @@ function mapBackendProject(p: any): Project {
 }
 
 function mapBackendSource(s: RegisteredSource): ConnectedResource {
+  const sourceType = s.source_type.toLowerCase() === 'drive' || s.source_type.toLowerCase() === 'google_drive'
+    ? 'drive'
+    : s.source_type.toLowerCase();
   return {
     id: s.id,
-    sourceType: s.source_type as any,
+    sourceType: sourceType as any,
     name: s.name,
-    url: s.url,
+    url: s.local_path || s.url,
     employeeId: s.employee_id || '',
     employeeName: s.employee_name || 'Unassigned',
     projectName: s.project_name || '',
-    status: (s.status === 'READY' || s.status === 'SYNCED') ? 'connected' : (s.status.toLowerCase() as any),
+    status: s.status.toLowerCase() as any,
     lastSynced: s.last_synced_at ? new Date(s.last_synced_at).toLocaleDateString() : 'Pending sync',
-    details: s.last_sync_error ? `Error: ${s.last_sync_error}` : `Status: ${s.status}`,
+    details: s.last_sync_error ? `Error: ${s.last_sync_error}` : (s.local_path ? `Path: ${s.local_path}` : `Status: ${s.status}`),
   };
 }
 
@@ -573,9 +577,11 @@ export default function App() {
     setNotifications((prev) => [newNotif, ...prev]);
   };
 
-  const handleDisconnectResource = (resId: string) => {
+  const handleDisconnectResource = async (resId: string) => {
     const res = connectedResources.find((r) => r.id === resId);
     if (res) {
+      if (!window.confirm(`Remove ${res.name}? The local folder and its files will remain untouched.`)) return;
+      await deleteSource(resId);
       setConnectedResources((prev) => prev.filter((r) => r.id !== resId));
       setEmployees((prev) =>
         prev.map((e) =>

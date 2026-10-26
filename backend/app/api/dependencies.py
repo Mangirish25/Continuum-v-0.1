@@ -50,7 +50,7 @@ async def get_current_admin(
 
         return admin
 
-    # If admin record not found in PostgreSQL:
+    # If admin record is missing locally:
     # Under development mode "open", auto-provision administrator profile from authenticated Supabase identity
     if settings.ADMIN_REGISTRATION_MODE == "open" and email:
         logger.info(f"Auto-provisioning Continuum administrator profile for Supabase user {sub} ({email}) under open registration mode")

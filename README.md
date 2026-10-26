@@ -2,19 +2,22 @@
 <img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
 </div>
 
-# Run and deploy your AI Studio app
+# Continuum — Knowledge Continuity Platform
 
-This contains everything you need to run your app locally.
+Continuum combines a React frontend with a FastAPI backend. The frontend lives in `frontend/`; backend services and setup instructions are in `backend/`.
 
-View your app in AI Studio: https://ai.studio/apps/355a3467-6fbd-4021-9f07-932b13c20d43
+## Run the frontend
 
-## Run Locally
+Prerequisite: Node.js.
 
-**Prerequisites:**  Node.js
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
+Vite serves the app at `http://localhost:3000`. Frontend environment values are documented in [`frontend/.env.example`](frontend/.env.example); put them in the repository-root `.env` file, which Vite loads for this setup.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Run the backend
+
+Follow the backend setup guide in [`backend/README.md`](backend/README.md). The root `docker-compose.yml` starts the supporting services and backend.

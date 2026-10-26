@@ -197,7 +197,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
               <span>Admin-Managed Record</span>
             </div>
             <p className="text-slate-500 leading-relaxed">
-              Employees do not need to register. You can connect public code repositories, documents, and Jira items directly to their profile.
+              Employees do not need to register. You can connect public code repositories and explicitly selected local document folders to their profile.
             </p>
           </div>
 

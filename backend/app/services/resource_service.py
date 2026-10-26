@@ -97,4 +97,26 @@ class ResourceService:
 
         return True
 
+    async def deactivate_resource(self, resource_id: str, db: AsyncSession) -> EmployeeResource:
+        """Disable a source and clear its searchable index without touching source files."""
+        resource = await self.get_resource(resource_id, db)
+        await self.clear_resource_index(resource_id, db)
+        resource.status = "DISABLED"
+        resource.resource_metadata = {
+            key: value for key, value in (resource.resource_metadata or {}).items()
+            if key != "indexed_documents_count"
+        }
+        await db.commit()
+        await db.refresh(resource)
+        return resource
+
+    async def clear_resource_index(self, resource_id: str, db: AsyncSession) -> None:
+        """Clear extracted documents and vectors without touching source files."""
+        docs_result = await db.execute(select(KnowledgeDocument).where(KnowledgeDocument.resource_id == resource_id))
+        documents = docs_result.scalars().all()
+        for document in documents:
+            vector_store_service.delete_by_document(document.id)
+            await db.delete(document)
+        await db.flush()
+
 resource_service = ResourceService()

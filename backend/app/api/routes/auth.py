@@ -27,7 +27,7 @@ async def register_admin(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Register a new Administrator using Supabase Auth and provision the administrator profile in PostgreSQL.
+    Register an administrator profile in the local relational database; Supabase Auth is optional.
     """
     # 1. Validate password confirmation if provided
     if payload.confirm_password and payload.password != payload.confirm_password:
@@ -79,7 +79,7 @@ async def register_admin(
     if not supabase_uid:
         supabase_uid = str(uuid.uuid4())
 
-    # 5. Provision Admin record in PostgreSQL
+    # 5. Provision Admin record in the configured relational database (SQLite by default)
     new_admin = Admin(
         email=payload.email,
         name=payload.name,

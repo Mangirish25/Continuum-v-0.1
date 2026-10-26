@@ -17,11 +17,9 @@ def normalize_provider(provider_str: Optional[str]) -> Optional[str]:
     if p in ["ALL", "ALL_SOURCES", "ANY"]:
         return None
     if p in ["GOOGLE_DRIVE", "GOOGLEDRIVE", "GDRIVE", "DRIVE", "GOOGLE"]:
-        return "GOOGLE_DRIVE"
+        return "DRIVE"
     if p in ["GITHUB", "GIT"]:
         return "GITHUB"
-    if p in ["JIRA", "ATLASSIAN"]:
-        return "JIRA"
     if p in ["NOTION", "NOTION_PAGE"]:
         return "NOTION"
     return p
@@ -97,11 +95,23 @@ class RetrievalService:
         if target_employee:
             logger.info(f"Resolved query '{request.query}' to employee: {target_employee.name} ({target_employee.id})")
 
+        resource_result = await db.execute(select(EmployeeResource).where(
+            EmployeeResource.status.in_(["READY", "SYNCED", "SYNCING", "PARTIAL", "CONNECTED"])
+        ))
+        active_resources = resource_result.scalars().all()
+        searchable_resource_ids = {
+            resource.id for resource in active_resources
+            if resource.provider == "GITHUB"
+            or (resource.provider in {"DRIVE", "NOTION"} and (resource.resource_metadata or {}).get("local_path"))
+        }
+
         # 2. Generate embedding for query
         query_embedding = self.embedding_service.generate_embedding(request.query)
 
         # 3. Vector store retrieval (Semantic search)
         where_filter: Dict[str, Any] = {}
+        if searchable_resource_ids:
+            where_filter["resource_id"] = {"$in": list(searchable_resource_ids)}
         if norm_provider:
             where_filter["provider"] = norm_provider
         if request.project_id:
@@ -113,13 +123,13 @@ class RetrievalService:
             query_embedding=query_embedding,
             n_results=request.limit * 2,
             where_filter=where_filter if where_filter else None
-        )
+        ) if searchable_resource_ids else []
 
         candidate_chunks: Dict[str, Dict[str, Any]] = {}
 
         for item in raw_vector_results:
             chunk_id = item.get("id", "")
-            if not chunk_id:
+            if not chunk_id or item.get("metadata", {}).get("resource_id") not in searchable_resource_ids:
                 continue
             candidate_chunks[chunk_id] = {
                 "id": chunk_id,
@@ -148,6 +158,7 @@ class RetrievalService:
                 select(KnowledgeChunk, KnowledgeDocument)
                 .join(KnowledgeDocument, KnowledgeChunk.document_id == KnowledgeDocument.id)
                 .where(or_(*relational_conditions))
+                .where(KnowledgeDocument.resource_id.in_(searchable_resource_ids))
             )
             if norm_provider:
                 db_stmt = db_stmt.where(KnowledgeDocument.provider == norm_provider)
@@ -259,10 +270,11 @@ class RetrievalService:
         if not evidence_items:
             if target_employee:
                 # Check what resources are connected for this employee
-                res_stmt = select(EmployeeResource).where(EmployeeResource.employee_id == target_employee.id)
-                if norm_provider:
-                    res_stmt = res_stmt.where(EmployeeResource.provider == norm_provider)
-                emp_resources = (await db.execute(res_stmt)).scalars().all()
+                emp_resources = [
+                    resource for resource in active_resources
+                    if resource.employee_id == target_employee.id
+                    and (not norm_provider or resource.provider == norm_provider)
+                ]
 
                 prov_desc = f"from {norm_provider.replace('_', ' ').title()}" if norm_provider else "across connected knowledge sources"
 
@@ -277,16 +289,16 @@ class RetrievalService:
                     if any(s == "FAILED" for s in statuses):
                         failed_res = next(r for r in emp_resources if r.status == "FAILED")
                         diagnostic_explanation = (
-                            f"Employee '{target_employee.name}' has a connected resource ('{failed_res.name}'), "
-                            f"but synchronization failed: {failed_res.last_sync_error or 'Sync error'}. "
-                            f"Please re-test credentials or retry synchronization from Connections."
+                            f"Employee '{target_employee.name}' has a connected folder ('{failed_res.name}'), "
+                            f"but indexing failed: {failed_res.last_sync_error or 'Indexing error'}. "
+                            f"Check that the path and files are readable, then retry indexing."
                         )
                     elif any(s in ["NEEDS_AUTH", "PENDING"] for s in statuses):
                         pending_res = next(r for r in emp_resources if r.status in ["NEEDS_AUTH", "PENDING"])
                         diagnostic_explanation = (
                             f"Employee '{target_employee.name}' has a connected resource ('{pending_res.name}'), "
-                            f"but it is awaiting authorization or initial synchronization (Status: {pending_res.status}). "
-                            f"Please authenticate and trigger sync to index evidence."
+                            f"but it is awaiting initial indexing (Status: {pending_res.status}). "
+                            f"Retry indexing after confirming the folder path."
                         )
                     elif any(s == "SYNCING" for s in statuses):
                         diagnostic_explanation = (
@@ -300,8 +312,7 @@ class RetrievalService:
                         )
             elif norm_provider:
                 # Check if any sources exist for this provider
-                prov_stmt = select(EmployeeResource).where(EmployeeResource.provider == norm_provider)
-                prov_sources = (await db.execute(prov_stmt)).scalars().all()
+                prov_sources = [resource for resource in active_resources if resource.provider == norm_provider]
                 if not prov_sources:
                     diagnostic_explanation = f"No {norm_provider.replace('_', ' ').title()} knowledge sources have been registered or connected yet."
                 else:
@@ -309,7 +320,7 @@ class RetrievalService:
             else:
                 total_chunks_count = (await db.execute(select(KnowledgeChunk))).scalars().all()
                 if not total_chunks_count:
-                    diagnostic_explanation = "The organizational knowledge base is currently empty. Connect and synchronize knowledge sources (GitHub, Google Drive, Notion, Jira) to index documents."
+                    diagnostic_explanation = "The organizational knowledge base is currently empty. Add an employee Drive or Notion folder connection to index local documents."
                 else:
                     diagnostic_explanation = f"Insufficient evidence found in synchronized knowledge base for query: '{request.query}'."
 

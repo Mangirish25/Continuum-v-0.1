@@ -1,14 +1,19 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import {fileURLToPath} from 'url';
 import {defineConfig} from 'vite';
+
+const frontendDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig(() => {
   return {
+    // Keep the existing repository-root .env file available to the frontend.
+    envDir: path.resolve(frontendDir, '..'),
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(frontendDir, 'src'),
       },
     },
     server: {
