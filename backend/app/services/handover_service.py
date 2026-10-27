@@ -161,12 +161,18 @@ class HandoverService:
         target_recipient = data.recipient_email or h.recipient_email or h.employee.email
 
         # Send Email
-        success = await email_service.send_handover_email(
-            recipient_email=target_recipient,
-            employee_name=h.employee.name,
-            project_name=h.project.name if h.project else "General Handover",
-            handover_package=h.knowledge_package or {}
-        )
+        try:
+            success = await email_service.send_handover_email(
+                recipient_email=target_recipient,
+                employee_name=h.employee.name,
+                project_name=h.project.name if h.project else "General Handover",
+                handover_package=h.knowledge_package or {},
+                recipient_name=data.recipient_name,
+                cc_recipients=[str(data.cc_email)] if data.cc_email else None,
+            )
+        except Exception as e:
+            logger.error(f"Email dispatch failed for handover {h.id}: {e}")
+            raise BadRequestException(f"Failed to dispatch handover email: {e}") from e
 
         if not success:
             raise BadRequestException("Failed to dispatch handover email.")

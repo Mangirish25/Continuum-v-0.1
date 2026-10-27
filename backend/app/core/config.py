@@ -20,14 +20,7 @@ class Settings(BaseSettings):
     ]
     
     # Persistent local relational store. Relative SQLite URLs resolve under backend/.
-    DATABASE_URL: str = "sqlite+aiosqlite:///../continuum_local.db"
-    SYNC_DATABASE_URL: Optional[str] = "sqlite:///../continuum_local.db"
-
-    # Optional administrator identity provider retained for existing login setups.
-    SUPABASE_URL: str = "https://placeholder-project.supabase.co"
-    SUPABASE_KEY: str = "placeholder-anon-key"
-    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
-    SUPABASE_JWT_SECRET: Optional[str] = None
+    DATABASE_URL: str = "sqlite+aiosqlite:///continuum_local.db"
 
     # The local knowledge root is always constrained to this project data directory.
     PROJECT_ROOT: Optional[str] = None
@@ -43,7 +36,6 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "continuum-secret-key-change-in-production-32bytes-min!"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
-    TOKEN_ENCRYPTION_KEY: str = "c2VjcmV0LWtleS0zMi1ieXRlcy1mb3ItYWVzLWVuY3J5cHRpb24="
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -77,8 +69,9 @@ class Settings(BaseSettings):
         return os.path.join(base_dir, self.CHROMA_PERSIST_DIR.lstrip("./"))
     
     # Email Service
-    EMAIL_PROVIDER: str = "console"  # console, smtp, mock
+    EMAIL_PROVIDER: str = "console"  # console, smtp, resend, mock
     EMAIL_API_KEY: Optional[str] = None
+    RESEND_API_KEY: Optional[str] = None
     SMTP_HOST: str = "localhost"
     SMTP_PORT: int = 1025
     SMTP_USER: Optional[str] = None

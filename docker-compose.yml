@@ -46,7 +46,6 @@ services:
           create_host_path: false
     environment:
       - DATABASE_URL=sqlite+aiosqlite:////app/storage/continuum.db
-      - SYNC_DATABASE_URL=sqlite:////app/storage/continuum.db
       - PROJECT_ROOT=/project
       - LOCAL_DATA_ROOT=/project/data
       - REDIS_URL=redis://redis:6379/0
@@ -74,7 +73,6 @@ services:
           create_host_path: false
     environment:
       - DATABASE_URL=sqlite+aiosqlite:////app/storage/continuum.db
-      - SYNC_DATABASE_URL=sqlite:////app/storage/continuum.db
       - PROJECT_ROOT=/project
       - LOCAL_DATA_ROOT=/project/data
       - REDIS_URL=redis://redis:6379/0

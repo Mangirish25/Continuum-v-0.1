@@ -35,7 +35,6 @@ import { ConnectResourceModal } from './components/modals/ConnectResourceModal';
 import { CreateHandoverModal } from './components/modals/CreateHandoverModal';
 import { CommandPalette } from './components/modals/CommandPalette';
 
-import { supabase } from './lib/supabase';
 import {
   getCurrentAdmin,
   getEmployees,
@@ -234,53 +233,30 @@ export default function App() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  // Supabase Auth Session Initialization & Synchronization
+  // Restore the local administrator session by validating its access token.
   useEffect(() => {
-    async function initSession() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          setIsAuthenticated(true);
-          if (currentScreen === 'signin') {
-            setCurrentScreen('dashboard');
-          }
-        }
-      } catch {
-        const localToken = localStorage.getItem('continuum_auth_token');
-        if (localToken) {
-          setIsAuthenticated(true);
-          if (currentScreen === 'signin') {
-            setCurrentScreen('dashboard');
-          }
-        }
+    let isMounted = true;
+    async function restoreSession() {
+      if (!localStorage.getItem('continuum_auth_token')) return;
+      const admin = await getCurrentAdmin();
+      if (isMounted && admin) {
+        setIsAuthenticated(true);
+        setCurrentScreen('dashboard');
+      } else if (isMounted) {
+        localStorage.removeItem('continuum_auth_token');
+        setIsAuthenticated(false);
+        setCurrentScreen('signin');
       }
     }
 
-    initSession();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        setIsAuthenticated(true);
-      } else {
-        const localToken = localStorage.getItem('continuum_auth_token');
-        if (!localToken) {
-          setIsAuthenticated(false);
-          setCurrentScreen('signin');
-        }
-      }
-    });
+    restoreSession();
 
     return () => {
-      authListener?.subscription?.unsubscribe();
+      isMounted = false;
     };
   }, []);
 
-  const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch {
-      // Continue cleanup
-    }
+  const handleSignOut = () => {
     localStorage.removeItem('continuum_auth_token');
     setIsAuthenticated(false);
     setCurrentScreen('signin');

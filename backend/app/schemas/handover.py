@@ -9,6 +9,8 @@ class HandoverCreate(BaseModel):
 
 class HandoverSendRequest(BaseModel):
     recipient_email: Optional[EmailStr] = None
+    recipient_name: Optional[str] = None
+    cc_email: Optional[EmailStr] = None
 
 class HandoverReverseRequest(BaseModel):
     reason: str = Field(..., min_length=1, description="Non-empty reason for reversing this handover")

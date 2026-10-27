@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Handover } from '../../types';
 import { X, Mail, CheckCircle2, Send, AlertTriangle } from 'lucide-react';
+import { sendHandover } from '../../lib/api';
 
 interface SendHandoverEmailModalProps {
   isOpen: boolean;
@@ -25,18 +26,27 @@ export const SendHandoverEmailModal: React.FC<SendHandoverEmailModalProps> = ({
   );
   const [ccAdmin, setCcAdmin] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSending(true);
-
-    setTimeout(() => {
-      setIsSending(false);
+    setSendError(null);
+    try {
+      await sendHandover(handover.id, {
+        recipient_email: recipientEmail.trim(),
+        recipient_name: recipientName.trim(),
+        cc_email: ccAdmin ? adminEmail : undefined,
+      });
       onSendSuccess(recipientEmail);
       onClose();
-    }, 700);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : 'The handover email could not be sent.');
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
@@ -148,6 +158,13 @@ export const SendHandoverEmailModal: React.FC<SendHandoverEmailModalProps> = ({
               </div>
             </div>
           </div>
+
+          {sendError && (
+            <div role="alert" className="p-3 bg-rose-50 border border-rose-200 rounded text-xs text-rose-800 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{sendError}</span>
+            </div>
+          )}
 
           <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
             <button

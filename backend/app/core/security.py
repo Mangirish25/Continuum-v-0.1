@@ -1,11 +1,7 @@
-import base64
 import hashlib
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Union
 import jwt
-import httpx
-from cryptography.fernet import Fernet
 from app.core.config import settings
 
 # Robust PBKDF2 Password Hashing (compatible across all Python & OS environments)
@@ -51,88 +47,12 @@ def decode_token(token: str) -> Dict[str, Any]:
     except jwt.PyJWTError:
         return {}
 
-async def verify_supabase_token(token: str) -> Optional[Dict[str, Any]]:
-    """
-    Verify access token issued by Supabase Auth or local developer JWT.
-    Validates expiration, signature, and extracts user ID (sub) and email.
-    """
-    # 1. If SUPABASE_JWT_SECRET is explicitly configured, decode directly
-    if settings.SUPABASE_JWT_SECRET:
-        try:
-            payload = jwt.decode(
-                token,
-                settings.SUPABASE_JWT_SECRET,
-                algorithms=["HS256"],
-                options={"verify_aud": False}
-            )
-            if payload.get("sub"):
-                return {
-                    "sub": payload.get("sub"),
-                    "email": payload.get("email"),
-                    "role": payload.get("role", "authenticated"),
-                    "user_metadata": payload.get("user_metadata", {})
-                }
-        except jwt.PyJWTError:
-            pass
-
-    # 2. Check live Supabase Auth API if URL is configured
-    if settings.SUPABASE_URL and "placeholder" not in settings.SUPABASE_URL:
-        try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1/user",
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "apikey": settings.SUPABASE_KEY
-                    },
-                    timeout=5.0
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    return {
-                        "sub": data.get("id"),
-                        "email": data.get("email"),
-                        "role": data.get("role", "authenticated"),
-                        "user_metadata": data.get("user_metadata", {})
-                    }
-        except Exception:
-            pass
-
-    # 3. Fallback for test suite / local dev tokens signed with JWT_SECRET
+def verify_access_token(token: str) -> Optional[Dict[str, Any]]:
+    """Validate an application-issued access token signed with the local JWT secret."""
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
-        if payload.get("sub"):
-            return {
-                "sub": payload.get("sub"),
-                "email": payload.get("email"),
-                "role": payload.get("role", "authenticated"),
-                "user_metadata": payload.get("user_metadata", {})
-            }
+        if payload.get("sub") and payload.get("type") == "access":
+            return payload
     except jwt.PyJWTError:
         pass
-
     return None
-
-# OAuth Token Encryption (Fernet / AES)
-def _get_fernet() -> Fernet:
-    key_bytes = settings.TOKEN_ENCRYPTION_KEY.encode('utf-8')
-    try:
-        return Fernet(key_bytes)
-    except Exception:
-        derived = base64.urlsafe_b64encode(settings.JWT_SECRET.zfill(32)[:32].encode('utf-8'))
-        return Fernet(derived)
-
-def encrypt_token(token: Optional[str]) -> Optional[str]:
-    if not token:
-        return None
-    fernet = _get_fernet()
-    return fernet.encrypt(token.encode('utf-8')).decode('utf-8')
-
-def decrypt_token(encrypted_token: Optional[str]) -> Optional[str]:
-    if not encrypted_token:
-        return None
-    try:
-        fernet = _get_fernet()
-        return fernet.decrypt(encrypted_token.encode('utf-8')).decode('utf-8')
-    except Exception:
-        return None

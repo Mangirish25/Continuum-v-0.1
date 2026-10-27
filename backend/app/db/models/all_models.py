@@ -28,7 +28,6 @@ class Admin(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=generate_uuid)
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
-    supabase_user_id: Mapped[Optional[str]] = mapped_column(String, unique=True, index=True, nullable=True)
     password_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(String, default="admin")

@@ -22,7 +22,6 @@ def upgrade_existing_sqlite_schema(connection) -> None:
         "admins": {
             "is_active": "BOOLEAN NOT NULL DEFAULT 1",
             "role": "VARCHAR NOT NULL DEFAULT 'admin'",
-            "supabase_user_id": "VARCHAR",
         },
         "employee_resources": {
             "last_successful_sync_at": "DATETIME",
@@ -48,7 +47,7 @@ def upgrade_existing_sqlite_schema(connection) -> None:
 import os
 
 db_url = settings.DATABASE_URL
-sync_db_url = settings.SYNC_DATABASE_URL or settings.DATABASE_URL.replace("+asyncpg", "+psycopg2")
+sync_db_url = db_url.replace("+aiosqlite", "").replace("+asyncpg", "+psycopg2")
 
 # Handle SQLite vs PostgreSQL async engine configuration
 if "sqlite" in db_url:
@@ -57,14 +56,20 @@ if "sqlite" in db_url:
         path_part = db_url.split(":///", 1)[1]
         if not os.path.isabs(path_part):
             backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-            abs_db_file = os.path.join(backend_dir, path_part).replace("\\", "/")
+            abs_db_file = os.path.abspath(os.path.join(backend_dir, path_part)).replace("\\", "/")
             os.makedirs(os.path.dirname(abs_db_file), exist_ok=True)
             db_url = f"sqlite+aiosqlite:///{abs_db_file}"
             sync_db_url = f"sqlite:///{abs_db_file}"
     elif "sqlite" in db_url and ":memory:" not in db_url:
         path_part = db_url.split("sqlite+aiosqlite:///", 1)[-1].split("sqlite:///", 1)[-1]
         if os.path.isabs(path_part):
-            os.makedirs(os.path.dirname(path_part), exist_ok=True)
+            abs_db_file = os.path.abspath(path_part)
+            os.makedirs(os.path.dirname(abs_db_file), exist_ok=True)
+            abs_db_file = abs_db_file.replace(os.sep, "/")
+            db_url = f"sqlite+aiosqlite:///{abs_db_file}"
+            sync_db_url = f"sqlite:///{abs_db_file}"
+    elif "sqlite" in db_url:
+        sync_db_url = db_url.replace("sqlite+aiosqlite://", "sqlite://")
 
     async_db_url = db_url if "sqlite+aiosqlite" in db_url else db_url.replace("sqlite://", "sqlite+aiosqlite://")
     engine = create_async_engine(async_db_url, connect_args={"check_same_thread": False})
@@ -73,13 +78,14 @@ else:
     # asyncpg expects 'ssl' parameter, not 'sslmode' (which is psycopg2/libpq parameter)
     if "+asyncpg" in db_url and "sslmode=" in db_url:
         db_url = db_url.replace("sslmode=", "ssl=")
+    sync_db_url = db_url.replace("+asyncpg", "+psycopg2")
     if "+psycopg2" in sync_db_url:
         if "+asyncpg" in sync_db_url:
             sync_db_url = sync_db_url.replace("+asyncpg", "+psycopg2")
         if "ssl=" in sync_db_url and "sslmode=" not in sync_db_url:
             sync_db_url = sync_db_url.replace("ssl=", "sslmode=")
 
-    # connect_args for asyncpg: disable prepared statement caching for Supabase PgBouncer transaction pooler
+    # Disable prepared statement caching for transaction-pooling PostgreSQL deployments.
     async_connect_args = {}
     if "+asyncpg" in db_url:
         async_connect_args = {

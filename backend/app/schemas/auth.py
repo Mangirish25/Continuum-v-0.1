@@ -25,7 +25,6 @@ class AdminOut(BaseModel):
     email: EmailStr
     name: str
     role: str = "admin"
-    supabase_user_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

@@ -1,8 +1,8 @@
 # Continuum backend
 
-Continuum's FastAPI backend stores operational records in SQLAlchemy models backed by SQLite. The application initializes tables on startup and creates the configured initial administrator only when that account does not already exist. Existing database records are preserved during startup schema upgrades. The default database is the existing repository-root `continuum_local.db`; set `DATABASE_URL` to another SQLite URL to change its location. SQLite foreign-key enforcement is enabled.
+Continuum's FastAPI backend stores operational records in SQLAlchemy models backed by SQLite. The application initializes tables on startup and creates the configured initial administrator only when that account does not already exist. Existing database records are preserved during startup schema upgrades. The local default database is `backend/continuum_local.db`; asynchronous API requests and synchronous background work derive from `DATABASE_URL` and use the same file. SQLite foreign-key enforcement is enabled.
 
-The existing relational entities remain in the ORM: admins, employees, projects, employee-project assignments, employee resources, indexed documents and chunks, risk scores, handovers, and handover audit logs. Employee and project creation only changes database records; it does not create or rename filesystem folders. Supabase Auth remains an optional administrator identity provider for existing installations. Supabase is not used for relational data. With the optional Supabase Auth environment values omitted, the backend uses its local administrator login.
+The existing relational entities remain in the ORM: admins, employees, projects, employee-project assignments, employee resources, indexed documents and chunks, risk scores, handovers, and handover audit logs. Employee and project creation only changes database records; it does not create or rename filesystem folders. Administrator registration and email/password login use the local database and application-issued JWTs.
 
 ## Local folder connections
 
@@ -26,9 +26,9 @@ The existing chunking, `all-MiniLM-L6-v2` embeddings, Chroma vector store, retri
 
 ## Configuration
 
-Copy `backend/.env.example` to `backend/.env`. SQLite settings are provided by default. Supabase values are optional and apply only when preserving Supabase administrator login; they are not needed for SQLite CRUD or local folders. Do not configure Google Drive, Notion, or Jira OAuth credentials for this workflow.
+Copy `backend/.env.example` to `backend/.env`. SQLite settings are provided by default. Do not configure Google Drive, Notion, or Jira OAuth credentials for this workflow.
 
-Copy `frontend/.env.example` values into the repository-root `.env`; the Vite config reads frontend values from that root file. Supabase Auth values in the frontend example are optional.
+Copy `frontend/.env.example` values into the repository-root `.env`; the Vite config reads frontend values from that root file.
 
 For local document access, the backend process must be able to read the repository's `data/` folder. An empty or missing `data/` directory is not created by the application; create it manually if needed.
 
@@ -59,9 +59,13 @@ npm run dev
 
 The frontend uses `http://localhost:3000`; API documentation is at `http://localhost:8000/api/v1/docs`. On a fresh database, the initial local administrator uses the values configured by `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD`. Existing accounts and passwords are preserved.
 
+### Handover email delivery
+
+Email delivery defaults to `console`. To send handover emails with Resend, set `EMAIL_PROVIDER=resend`, `RESEND_API_KEY` to a server-side Resend API key, and `SENDER_EMAIL` to an address on a domain verified in Resend. Keep the key in `backend/.env` or the deployment secret store; do not put it in frontend configuration. SMTP remains available with `EMAIL_PROVIDER=smtp` and its `SMTP_*` settings.
+
 ## Docker Compose
 
-Create the root `data/` directory manually before starting Compose, then run `docker compose up --build`. Compose mounts that directory read-only at `/project/data` for the backend and worker, and stores SQLite in the persistent `continuum_db_data` volume. Redis, ChromaDB, and Ollama retain their existing service roles. No PostgreSQL service is required.
+Create the root `data/` directory manually before starting Compose, then run `docker compose up --build`. Compose mounts that directory read-only at `/project/data` for the backend and worker, and both use the same SQLite file in the persistent `continuum_db_data` volume. The host-run backend uses `backend/continuum_local.db`; Docker Compose is a separate deployment with its own persistent database volume. Redis, ChromaDB, and Ollama retain their existing service roles. No PostgreSQL service is required.
 
 ## API and lifecycle
 
@@ -71,4 +75,4 @@ Create the root `data/` directory manually before starting Compose, then run `do
 - `POST /api/v1/sources/{id}/sync`: reindex a connected folder.
 - `DELETE /api/v1/sources/{id}`: deactivate the connection, clear its search index, and preserve files.
 
-OAuth authorization and callback routes for knowledge providers are not registered. The existing Supabase Auth login integration remains optional and separate from SQLite persistence. Legacy OAuth token model fields are retained in the ORM for compatibility with existing SQLite files but are no longer read or written by active connection routes.
+OAuth authorization and callback routes for knowledge providers are not registered. Authentication uses local password hashes and JWTs. Legacy OAuth token model fields are retained in the ORM for compatibility with existing SQLite files but are no longer read or written by active connection routes.

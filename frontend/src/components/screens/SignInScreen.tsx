@@ -189,7 +189,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess }) =
                 >
                   {isLoading ? (
                     <span className="font-mono text-xs animate-pulse">
-                      Authenticating with Supabase...
+                      Signing in...
                     </span>
                   ) : (
                     <>
@@ -355,7 +355,7 @@ export const SignInScreen: React.FC<SignInScreenProps> = ({ onSignInSuccess }) =
           <div className="bg-[#f8fafc] px-6 py-3 border-t border-slate-200 text-[11px] text-slate-500 flex items-center justify-between">
             <span className="flex items-center gap-1">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Admin-Only Enterprise System (Supabase Auth)</span>
+              <span>Admin-only local account system</span>
             </span>
             <span className="font-mono text-slate-400">Continuum</span>
           </div>

@@ -24,7 +24,7 @@ if config.config_file_name:
 target_metadata = Base.metadata
 
 def _get_migration_url() -> str:
-    url = settings.SYNC_DATABASE_URL or settings.DATABASE_URL
+    url = settings.DATABASE_URL.replace("+aiosqlite", "")
     if "+asyncpg" in url:
         url = url.replace("+asyncpg", "+psycopg2")
     if "+psycopg2" in url and "ssl=" in url and "sslmode=" not in url:

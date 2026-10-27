@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 # Set test environment
 os.environ["ENVIRONMENT"] = "testing"
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
-os.environ["SYNC_DATABASE_URL"] = "sqlite:///:memory:"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 

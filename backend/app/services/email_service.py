@@ -1,4 +1,9 @@
+import asyncio
+import json
 import smtplib
+import urllib.error
+import urllib.request
+from html import escape
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional, Dict, Any
@@ -7,7 +12,44 @@ from app.core.logging import logger
 
 class EmailService:
     def __init__(self, provider: str = settings.EMAIL_PROVIDER):
-        self.provider = provider
+        self.provider = provider.strip().lower()
+
+    @staticmethod
+    def _send_with_resend(
+        api_key: str,
+        sender: str,
+        recipient: str,
+        subject: str,
+        html_body: str,
+        cc_recipients: Optional[list[str]] = None,
+    ) -> None:
+        """Send an email through Resend's REST API without blocking the async app loop."""
+        message = {
+            "from": sender,
+            "to": [recipient],
+            "subject": subject,
+            "html": html_body,
+        }
+        if cc_recipients:
+            message["cc"] = cc_recipients
+        payload = json.dumps(message).encode("utf-8")
+        request = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "Continuum/0.1.0",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                response.read()
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Resend returned HTTP {exc.code}: {detail[:1000]}") from exc
 
     async def send_handover_email(
         self,
@@ -15,18 +57,21 @@ class EmailService:
         employee_name: str,
         project_name: str,
         handover_package: Dict[str, Any],
-        sender_email: str = settings.SENDER_EMAIL
+        sender_email: str = settings.SENDER_EMAIL,
+        recipient_name: Optional[str] = None,
+        cc_recipients: Optional[list[str]] = None,
     ) -> bool:
         subject = f"[Continuum Handover] Knowledge Continuity Package for {employee_name} ({project_name})"
 
         # Format HTML email body
-        summary = handover_package.get("summary", "")
-        contributions = "".join([f"<li>{c}</li>" for c in handover_package.get("contributions", [])])
-        github_work = "".join([f"<li>{g}</li>" for g in handover_package.get("github_work", [])])
-        jira = "".join([f"<li>{j}</li>" for j in handover_package.get("jira_responsibilities", [])])
-        drive = "".join([f"<li>{d}</li>" for d in handover_package.get("drive_knowledge", [])])
-        notion = "".join([f"<li>{n}</li>" for n in handover_package.get("notion_knowledge", [])])
-        priorities = "".join([f"<li>{p}</li>" for p in handover_package.get("transfer_priorities", [])])
+        summary = escape(str(handover_package.get("summary", "")))
+        greeting = f"<p>Hi {escape(recipient_name)},</p>" if recipient_name else ""
+        contributions = "".join([f"<li>{escape(str(c))}</li>" for c in handover_package.get("contributions", [])])
+        github_work = "".join([f"<li>{escape(str(g))}</li>" for g in handover_package.get("github_work", [])])
+        jira = "".join([f"<li>{escape(str(j))}</li>" for j in handover_package.get("jira_responsibilities", [])])
+        drive = "".join([f"<li>{escape(str(d))}</li>" for d in handover_package.get("drive_knowledge", [])])
+        notion = "".join([f"<li>{escape(str(n))}</li>" for n in handover_package.get("notion_knowledge", [])])
+        priorities = "".join([f"<li>{escape(str(p))}</li>" for p in handover_package.get("transfer_priorities", [])])
 
         successor_info = handover_package.get("recommended_successor")
         successor_html = ""
@@ -34,8 +79,8 @@ class EmailService:
             successor_html = f"""
             <div style="background:#eef2ff; border-left:4px solid #4f46e5; padding:12px; margin:15px 0;">
                 <h4 style="margin:0 0 5px 0; color:#3730a3;">AI Recommended Successor</h4>
-                <p style="margin:0;"><strong>{successor_info.get('name')}</strong> ({successor_info.get('email')})</p>
-                <p style="margin:5px 0 0 0; font-size:0.9em; color:#4338ca;">Rationale: {successor_info.get('reason')}</p>
+                <p style="margin:0;"><strong>{escape(str(successor_info.get('name', '')))}</strong> ({escape(str(successor_info.get('email', '')))})</p>
+                <p style="margin:5px 0 0 0; font-size:0.9em; color:#4338ca;">Rationale: {escape(str(successor_info.get('reason', '')))}</p>
             </div>
             """
 
@@ -57,10 +102,11 @@ class EmailService:
             <div class="container">
                 <div class="header">
                     <h2 style="margin:0;">Continuum — Knowledge Continuity Handover</h2>
-                    <p style="margin:5px 0 0 0; opacity:0.9;">Employee: {employee_name} | Target Project: {project_name}</p>
+                    <p style="margin:5px 0 0 0; opacity:0.9;">Employee: {escape(employee_name)} | Target Project: {escape(project_name)}</p>
                 </div>
                 
                 <div class="section">
+                    {greeting}
                     <h3>Executive Summary</h3>
                     <p>{summary}</p>
                     {successor_html}
@@ -99,18 +145,40 @@ class EmailService:
         </html>
         """
 
+        if self.provider == "resend":
+            api_key = settings.RESEND_API_KEY or settings.EMAIL_API_KEY
+            if not api_key:
+                raise RuntimeError("Resend is selected but RESEND_API_KEY is not configured")
+            try:
+                await asyncio.to_thread(
+                    self._send_with_resend,
+                    api_key,
+                    sender_email,
+                    recipient_email,
+                    subject,
+                    html_body,
+                    cc_recipients,
+                )
+                logger.info(f"Handover email sent via Resend to {recipient_email}")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to send email via Resend to {recipient_email}: {e}")
+                raise RuntimeError(f"Resend email delivery failed: {e}") from e
+
         if self.provider == "smtp":
             try:
                 msg = MIMEMultipart("alternative")
                 msg["Subject"] = subject
                 msg["From"] = sender_email
                 msg["To"] = recipient_email
+                if cc_recipients:
+                    msg["Cc"] = ", ".join(cc_recipients)
                 msg.attach(MIMEText(html_body, "html"))
 
                 with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
                     if settings.SMTP_USER and settings.SMTP_PASSWORD:
                         server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                    server.sendmail(sender_email, [recipient_email], msg.as_string())
+                    server.sendmail(sender_email, [recipient_email, *(cc_recipients or [])], msg.as_string())
                 logger.info(f"Handover email sent via SMTP to {recipient_email}")
                 return True
             except Exception as e:
